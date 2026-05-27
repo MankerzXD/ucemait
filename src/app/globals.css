@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --background: #09090b; /* Deep zinc background */
+  --foreground: #f4f4f5; /* Light gray text */
+  
+  --bg-card: #0e0e11;
+  --bg-card-header: #141418;
+  --border-subtle: #1c1c21;
+  --border-active: #27272a;
+  
+  --crimson: #c20e2c; /* UCEMA Crimson red */
+  
+  --green: #22c55e;
+  --yellow: #eab308;
+  
+  --font-mono: var(--font-mono), monospace;
+  --font-sans: var(--font-sans), sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-crimson: var(--crimson);
+  --color-zinc-950: var(--background);
+  --color-zinc-900: var(--bg-card-header);
+  --color-zinc-800: var(--border-subtle);
+  --color-zinc-700: var(--border-active);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* Minimalist border design */
+.card-minimalist {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.card-minimalist:hover {
+  border-color: var(--border-active);
+  background-color: #121216;
+}
+
+/* Hide scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
