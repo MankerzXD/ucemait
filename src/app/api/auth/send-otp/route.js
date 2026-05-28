@@ -26,10 +26,9 @@ export async function POST(request) {
     }
 
     // 3. Send email using Resend
-    // Note: onboarding@resend.dev is the default sandbox sender and can only send to verified emails (like the owner's account)
-    // If you have a verified domain, replace onboarding@resend.dev with your domain sender.
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Soporte IT UCEMA <onboarding@resend.dev>';
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: 'Soporte IT UCEMA <onboarding@resend.dev>',
+      from: fromEmail,
       to: [email.trim().toLowerCase()],
       subject: 'Código de Acceso OTP - Support IT',
       html: `
