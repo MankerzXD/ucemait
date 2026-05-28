@@ -59,12 +59,16 @@ export default function LoginPage() {
         throw new Error(result.error || 'Fallo al enviar código.');
       }
 
-      setSuccessMsg('Código de verificación enviado a tu email.');
+      if (result.isDemo) {
+        setSuccessMsg('MODO DEMO: Código de verificación de bypass. (Código: 123456)');
+      } else {
+        setSuccessMsg('Código de verificación enviado a tu email.');
+      }
       setStage('otp');
     } catch (err) {
       console.error('API OTP failed, switching to Mock OTP mode:', err);
       // Fallback: Mock OTP generation for development/testing
-      setSuccessMsg('MODO DEMO: Código de verificación enviado. (Código: 123456)');
+      setSuccessMsg('MODO DEMO: Código de verificación de bypass. (Código: 123456)');
       setStage('otp');
     } finally {
       setLoading(false);
