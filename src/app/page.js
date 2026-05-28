@@ -305,7 +305,7 @@ export default function ManagementPage() {
           )}
 
           <button
-            onClick={() => router.push('/TV')}
+            onClick={() => router.push('/tv')}
             className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded font-mono flex items-center gap-1.5 cursor-pointer flex-grow md:flex-grow-0 justify-center"
           >
             <Tv size={14} /> VER TV DASHBOARD
