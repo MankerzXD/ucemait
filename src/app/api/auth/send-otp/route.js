@@ -26,7 +26,7 @@ export async function POST(request) {
     const otpCode = String(Math.floor(100000 + Math.random() * 900000));
 
     // 2. Send the email using Resend
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Soporte IT <noreply@ucema.edu.ar>';
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Soporte IT <no-reply@mankerz.net>';
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: fromEmail,
       to: [cleanEmail],
