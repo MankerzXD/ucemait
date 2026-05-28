@@ -26,7 +26,7 @@ export async function POST(request) {
     }
 
     // 3. Send email using Resend
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Soporte IT UCEMA <onboarding@resend.dev>';
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Soporte IT <noreply@ucema.edu.ar>';
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: fromEmail,
       to: [email.trim().toLowerCase()],

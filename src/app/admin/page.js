@@ -170,24 +170,25 @@ export default function AdminPage() {
 
   const saveRole = async (e) => {
     e.preventDefault();
-    if (!targetEmail.trim()) return;
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    if (!cleanEmail) return;
 
     setRoleMessage('');
 
     try {
       const { error } = await supabase
         .from('user_roles')
-        .upsert({ email: targetEmail, role: targetRole }, { onConflict: 'email' });
+        .upsert({ email: cleanEmail, role: targetRole }, { onConflict: 'email' });
       
       if (error) throw error;
-      setRoleMessage(`Permisos actualizados para: ${targetEmail}`);
+      setRoleMessage(`Permisos actualizados para: ${cleanEmail}`);
       fetchData(userRole);
     } catch {
       // Mock save
-      const mockRoles = [...rolesList.filter(r => r.email !== targetEmail), { id: Date.now().toString(), email: targetEmail, role: targetRole }];
+      const mockRoles = [...rolesList.filter(r => r.email.toLowerCase() !== cleanEmail), { id: Date.now().toString(), email: cleanEmail, role: targetRole }];
       localStorage.setItem('demo_roles', JSON.stringify(mockRoles));
       setRolesList(mockRoles);
-      setRoleMessage(`[Demo] Permisos actualizados para: ${targetEmail}`);
+      setRoleMessage(`[Demo] Permisos actualizados para: ${cleanEmail}`);
     }
     setTargetEmail('');
   };
