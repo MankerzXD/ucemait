@@ -59,17 +59,11 @@ export default function LoginPage() {
         throw new Error(result.error || 'Fallo al enviar código.');
       }
 
-      if (result.isDemo) {
-        setSuccessMsg('MODO DEMO: Código de verificación de bypass. (Código: 123456)');
-      } else {
-        setSuccessMsg('Código de verificación enviado a tu email.');
-      }
+      setSuccessMsg('Código de verificación enviado a tu email.');
       setStage('otp');
     } catch (err) {
-      console.error('API OTP failed, switching to Mock OTP mode:', err);
-      // Fallback: Mock OTP generation for development/testing
-      setSuccessMsg('MODO DEMO: Código de verificación de bypass. (Código: 123456)');
-      setStage('otp');
+      console.error('API OTP failed:', err);
+      setErrorMsg(err.message || 'Error al enviar código de verificación.');
     } finally {
       setLoading(false);
     }
@@ -104,26 +98,11 @@ export default function LoginPage() {
         router.push('/');
       }, 1000);
     } catch (err) {
-      console.warn('API verification failed, checking Mock OTP:', err);
-      
-      // Fallback: Check if user entered mock code '123456'
-      if (otpToken.trim() === '123456' || otpToken.trim() === '1211') {
-        setSuccessMsg('[Demo] Código verificado. Conectando...');
-        localStorage.setItem('demo_user_email', email.trim());
-        setTimeout(() => {
-          router.push('/');
-        }, 1000);
-      } else {
-        setErrorMsg(err.message || 'Código incorrecto. Por favor, reintenta.');
-        setLoading(false);
-      }
+      console.error('API verification failed:', err);
+      setErrorMsg(err.message || 'Código incorrecto. Por favor, reintenta.');
+    } finally {
+      setLoading(false);
     }
-  };
-
-  // Demo bypass to showcase role capabilities without needing immediate DB connection
-  const handleDemoBypass = (demoEmail) => {
-    localStorage.setItem('demo_user_email', demoEmail);
-    router.push('/');
   };
 
   return (
@@ -212,33 +191,8 @@ export default function LoginPage() {
             </button>
           </form>
         )}
-
-        <div className="mt-8 border-t border-zinc-800 pt-6">
-          <p className="text-center text-[10px] uppercase tracking-wider text-zinc-500 font-mono mb-4">
-            — ACCESO RÁPIDO DEMO —
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => handleDemoBypass('sanchezmanuel397@gmail.com')}
-              className="bg-zinc-950 hover:bg-zinc-850 border border-red-950 text-red-500 text-[9px] py-2 rounded font-mono font-bold transition cursor-pointer"
-            >
-              ADMIN
-            </button>
-            <button
-              onClick={() => handleDemoBypass('ajgarcia@ucema.edu.ar')}
-              className="bg-zinc-950 hover:bg-zinc-850 border border-zinc-850 text-amber-500 text-[9px] py-2 rounded font-mono font-bold transition cursor-pointer"
-            >
-              COORD
-            </button>
-            <button
-              onClick={() => handleDemoBypass('support@ucema.edu.ar')}
-              className="bg-zinc-950 hover:bg-zinc-850 border border-zinc-850 text-zinc-400 text-[9px] py-2 rounded font-mono font-bold transition cursor-pointer"
-            >
-              STAFF
-            </button>
-          </div>
-        </div>
       </div>
     </main>
   );
+}
 }
