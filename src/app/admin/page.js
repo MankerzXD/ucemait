@@ -80,8 +80,8 @@ export default function AdminPage() {
 
   const fetchData = async (role) => {
     try {
-      // Fetch User Roles for display if Super Admin
-      if (role === 'super_admin') {
+      // Fetch User Roles for display if Super Admin or Coordinator
+      if (role === 'super_admin' || role === 'coordinator') {
         const { data: roles, error: errRoles } = await supabase.from('user_roles').select('*');
         if (errRoles) throw errRoles;
         if (roles) {
@@ -268,14 +268,14 @@ export default function AdminPage() {
               <Users size={16} /> Gestión de Roles
             </h2>
             <p className="text-[10px] text-zinc-500 uppercase">
-              {userRole === 'super_admin' ? 'Asignación de privilegios' : 'Sólo disponible para Super Admin'}
+              {(userRole === 'super_admin' || userRole === 'coordinator') ? 'Asignación de privilegios' : 'Sólo disponible para Coordinación/Admin'}
             </p>
           </div>
 
-          {userRole !== 'super_admin' ? (
+          {(userRole !== 'super_admin' && userRole !== 'coordinator') ? (
             <div className="p-4 bg-zinc-950/60 border border-zinc-850 rounded text-center text-xs text-zinc-500 py-12">
               Privilegios insuficientes. Tu rol actual es: <strong className="text-zinc-400 font-mono">{userRole.toUpperCase()}</strong>.
-              <br />Sólo <strong className="text-red-500 font-mono">sanchezmanuel397@gmail.com</strong> puede asignar coordinadores.
+              <br />No cuentas con permisos para gestionar roles.
             </div>
           ) : (
             <>
