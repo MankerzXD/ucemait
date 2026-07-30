@@ -3,6 +3,21 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(request) {
   try {
+    // Check environment variables configuration
+    const missingVars = [];
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-url')) {
+      missingVars.push('NEXT_PUBLIC_SUPABASE_URL');
+    }
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY === 'placeholder-key') {
+      missingVars.push('SUPABASE_SERVICE_ROLE_KEY');
+    }
+
+    if (missingVars.length > 0) {
+      return NextResponse.json({ 
+        error: `Error de configuración en el servidor. Faltan configurar las siguientes variables de entorno en Vercel: ${missingVars.join(', ')}. Por favor agrégalas en settings de Vercel.` 
+      }, { status: 500 });
+    }
+
     const { email, token } = await request.json();
 
     if (!email || !token) {
