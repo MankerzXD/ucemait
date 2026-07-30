@@ -247,23 +247,29 @@ export default function TvDashboardPage() {
 
   // 3. Database fetch & Realtime subscription
   useEffect(() => {
+    let channel;
+
     async function initDashboard() {
       await fetchInitialData();
       
       // Supabase Real-time subscriber
-      const channel = supabase
+      channel = supabase
         .channel('dashboard-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, fetchInitialData)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'observations' }, fetchInitialData)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_events' }, fetchInitialData)
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+        .subscribe((status) => {
+          console.log('Realtime subscription status:', status);
+        });
     }
 
     initDashboard();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   const fetchInitialData = async () => {
@@ -279,7 +285,8 @@ export default function TvDashboardPage() {
       const { data: evts, error: errEvts } = await supabase.from('fixed_events').select('*');
       if (errEvts) throw errEvts;
       if (evts) setEvents(evts);
-    } catch {
+    } catch (err) {
+      console.error('Error fetching TV data:', err);
       // Fallback
       loadDemoData();
     }
