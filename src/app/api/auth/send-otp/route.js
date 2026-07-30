@@ -57,7 +57,9 @@ export async function POST(request) {
 
     if (dbError) {
       console.error('Error saving OTP to database:', dbError);
-      return NextResponse.json({ error: 'Fallo al guardar el código de acceso en el servidor.' }, { status: 500 });
+      return NextResponse.json({ 
+        error: `Fallo al guardar el código de acceso en el servidor: ${dbError.message || 'Error desconocido'} (${dbError.code || 'sin código'})` 
+      }, { status: 500 });
     }
 
     return NextResponse.json({ 
