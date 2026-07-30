@@ -75,8 +75,16 @@ export async function POST(request) {
 
     if (dbError) {
       console.error('Error saving OTP to database:', dbError);
+      const mask = (str, visibleLen = 5) => {
+        if (!str) return 'vacía/no-definida';
+        if (str.length <= visibleLen * 2) return `[oculta, largo=${str.length}]`;
+        return `${str.substring(0, visibleLen)}...${str.substring(str.length - visibleLen)} (largo=${str.length})`;
+      };
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+      const resendApiKey = process.env.RESEND_API_KEY || '';
       return NextResponse.json({ 
-        error: `Fallo al guardar el código de acceso en el servidor: ${dbError.message || 'Error desconocido'} (${dbError.code || 'sin código'})` 
+        error: `Fallo al guardar el código de acceso en el servidor: ${dbError.message || 'Error desconocido'} (${dbError.code || 'sin código'}). DB URL: ${mask(supabaseUrl, 15)}, DB Key: ${mask(supabaseServiceKey, 4)}, Resend Key: ${mask(resendApiKey, 4)}` 
       }, { status: 500 });
     }
 
