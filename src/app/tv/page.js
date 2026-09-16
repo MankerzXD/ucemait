@@ -277,11 +277,9 @@ export default function TvDashboardPage() {
     } catch {}
   };
 
-  // Check for upcoming directives (< 15 min away)
+  // Check for upcoming directives & calendar events (< 15 min away)
   useEffect(() => {
     const checkUpcoming = () => {
-      if (!directives || directives.length === 0) return;
-
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
@@ -289,32 +287,89 @@ export default function TvDashboardPage() {
       const todayStr = `${currentYear}-${currentMonth}-${currentDay}`;
       const nowTotalMin = now.getHours() * 60 + now.getMinutes();
 
+      const dayMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+      const todayDayName = dayMap[now.getDay()];
+      const normalizeDay = (d) => (d || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
       const due = [];
-      directives.forEach(dir => {
-        if (!dir.directive_date || dir.directive_date !== todayStr) return;
-        if (!dir.directive_time) return;
 
-        const parts = dir.directive_time.split(':');
-        if (parts.length < 2) return;
-        const targetH = parseInt(parts[0], 10);
-        const targetM = parseInt(parts[1], 10);
-        if (isNaN(targetH) || isNaN(targetM)) return;
+      // 1. Directives check
+      if (directives && directives.length > 0) {
+        directives.forEach(dir => {
+          if (!dir.directive_date || dir.directive_date !== todayStr) return;
+          if (!dir.directive_time) return;
 
-        const targetTotalMin = targetH * 60 + targetM;
-        const diffMin = targetTotalMin - nowTotalMin;
+          const parts = dir.directive_time.split(':');
+          if (parts.length < 2) return;
+          const targetH = parseInt(parts[0], 10);
+          const targetM = parseInt(parts[1], 10);
+          if (isNaN(targetH) || isNaN(targetM)) return;
 
-        // Trigger if between -10 min and +15 min
-        if (diffMin >= -10 && diffMin <= 15) {
-          const key = `${dir.id}_${dir.directive_date}_${dir.directive_time}`;
-          if (!alertedDirectivesRef.current.has(key)) {
-            due.push({ ...dir, diffMinutes: diffMin });
+          const targetTotalMin = targetH * 60 + targetM;
+          const diffMin = targetTotalMin - nowTotalMin;
+
+          // Trigger if between -10 min and +15 min
+          if (diffMin >= -10 && diffMin <= 15) {
+            const key = `dir_${dir.id}_${dir.directive_date}_${dir.directive_time}`;
+            if (!alertedDirectivesRef.current.has(key)) {
+              due.push({
+                id: `dir_${dir.id}`,
+                dedupKey: key,
+                sourceType: 'directiva',
+                badge: 'DIRECTIVA',
+                title: `AULA ${dir.classroom}`,
+                time: dir.directive_time,
+                text: dir.requirements,
+                subtitle: `Aula ${dir.classroom} • Fecha: ${dir.directive_date}`,
+                creator: dir.created_by_email,
+                diffMinutes: diffMin
+              });
+            }
           }
-        }
-      });
+        });
+      }
+
+      // 2. Calendar Events check (Lunes a Viernes)
+      if (events && events.length > 0) {
+        events.forEach(evt => {
+          if (!evt.day_of_week) return;
+          if (normalizeDay(evt.day_of_week) !== todayDayName) return;
+
+          const timeMatch = (evt.time_range || '').match(/(\d{1,2}):(\d{2})/);
+          if (!timeMatch) return;
+
+          const targetH = parseInt(timeMatch[1], 10);
+          const targetM = parseInt(timeMatch[2], 10);
+          if (isNaN(targetH) || isNaN(targetM)) return;
+
+          const targetTotalMin = targetH * 60 + targetM;
+          const diffMin = targetTotalMin - nowTotalMin;
+
+          // Trigger if between -10 min and +15 min
+          if (diffMin >= -10 && diffMin <= 15) {
+            const timeStr = `${String(targetH).padStart(2, '0')}:${String(targetM).padStart(2, '0')}`;
+            const key = `evt_${evt.id}_${todayStr}_${timeStr}`;
+            if (!alertedDirectivesRef.current.has(key)) {
+              due.push({
+                id: `evt_${evt.id}`,
+                dedupKey: key,
+                sourceType: 'evento',
+                badge: 'EVENTO',
+                title: (evt.title || 'Evento').toUpperCase(),
+                time: timeStr,
+                text: evt.description || evt.title,
+                subtitle: `${evt.day_of_week} • Agenda Semanal (${evt.time_range})`,
+                creator: evt.created_by_email,
+                diffMinutes: diffMin
+              });
+            }
+          }
+        });
+      }
 
       if (due.length > 0) {
         due.forEach(d => {
-          alertedDirectivesRef.current.add(`${d.id}_${d.directive_date}_${d.directive_time}`);
+          alertedDirectivesRef.current.add(d.dedupKey);
         });
         setUpcomingAlertTasks(due);
         setShowAlertModal(true);
@@ -326,7 +381,7 @@ export default function TvDashboardPage() {
     checkUpcoming();
     const interval = setInterval(checkUpcoming, 10000);
     return () => clearInterval(interval);
-  }, [directives]);
+  }, [directives, events]);
 
   // 50-second auto-close countdown for TV
   useEffect(() => {
@@ -809,12 +864,19 @@ export default function TvDashboardPage() {
                   className="bg-[#141418] border-2 border-red-900/50 p-5 rounded-xl flex flex-col gap-2.5 relative overflow-hidden shadow-md"
                 >
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className={`text-xs font-mono px-2.5 py-1 rounded font-bold uppercase ${
+                        task.sourceType === 'evento' 
+                          ? 'bg-amber-950/80 border border-amber-800 text-amber-300' 
+                          : 'bg-[#940028]/60 border border-[#940028] text-white'
+                      }`}>
+                        {task.badge || (task.classroom ? 'DIRECTIVA' : 'EVENTO')}
+                      </span>
                       <span className="font-black text-red-400 font-mono text-base tracking-wider uppercase">
-                        {task.classroom}
+                        {task.title || (task.classroom ? `AULA ${task.classroom}` : '')}
                       </span>
                       <span className="text-xs font-mono font-bold bg-red-950 border border-red-800 text-red-200 px-2.5 py-1 rounded flex items-center gap-1.5">
-                        <Clock size={13} /> {task.directive_time} hs
+                        <Clock size={13} /> {task.time || task.directive_time} hs
                       </span>
                     </div>
                     <span className="text-sm font-extrabold text-amber-400 font-mono bg-amber-950/40 border border-amber-900/60 px-3 py-0.5 rounded-full animate-pulse">
@@ -823,12 +885,14 @@ export default function TvDashboardPage() {
                   </div>
 
                   <p className="text-zinc-100 text-sm font-semibold leading-relaxed bg-zinc-950/80 p-3.5 rounded-lg border border-zinc-900">
-                    {task.requirements}
+                    {task.text || task.requirements}
                   </p>
 
                   <div className="flex justify-between items-center text-[11px] text-zinc-500 font-mono pt-1">
-                    <span>Fecha: {task.directive_date}</span>
-                    <span>Registrado por: {task.created_by_email}</span>
+                    <span>{task.subtitle || `Fecha: ${task.directive_date}`}</span>
+                    {(task.creator || task.created_by_email) && (
+                      <span>Registrado por: {task.creator || task.created_by_email}</span>
+                    )}
                   </div>
                 </div>
               ))}

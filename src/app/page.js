@@ -34,6 +34,7 @@ export default function ManagementPage() {
   const [eventTitle, setEventTitle] = useState('');
   const [eventDesc, setEventDesc] = useState('');
   const [eventTime, setEventTime] = useState('');
+  const [eventEndTime, setEventEndTime] = useState('');
 
   // Loaded database data
   const [directivesList, setDirectivesList] = useState([]);
@@ -152,11 +153,9 @@ export default function ManagementPage() {
     } catch {}
   };
 
-  // Check for upcoming directives (< 15 min away)
+  // Check for upcoming directives & calendar events (< 15 min away)
   useEffect(() => {
     const checkUpcoming = () => {
-      if (!directivesList || directivesList.length === 0) return;
-
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
@@ -164,32 +163,89 @@ export default function ManagementPage() {
       const todayStr = `${currentYear}-${currentMonth}-${currentDay}`;
       const nowTotalMin = now.getHours() * 60 + now.getMinutes();
 
+      const dayMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+      const todayDayName = dayMap[now.getDay()];
+      const normalizeDay = (d) => (d || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
       const due = [];
-      directivesList.forEach(dir => {
-        if (!dir.directive_date || dir.directive_date !== todayStr) return;
-        if (!dir.directive_time) return;
 
-        const parts = dir.directive_time.split(':');
-        if (parts.length < 2) return;
-        const targetH = parseInt(parts[0], 10);
-        const targetM = parseInt(parts[1], 10);
-        if (isNaN(targetH) || isNaN(targetM)) return;
+      // 1. Directives check
+      if (directivesList && directivesList.length > 0) {
+        directivesList.forEach(dir => {
+          if (!dir.directive_date || dir.directive_date !== todayStr) return;
+          if (!dir.directive_time) return;
 
-        const targetTotalMin = targetH * 60 + targetM;
-        const diffMin = targetTotalMin - nowTotalMin;
+          const parts = dir.directive_time.split(':');
+          if (parts.length < 2) return;
+          const targetH = parseInt(parts[0], 10);
+          const targetM = parseInt(parts[1], 10);
+          if (isNaN(targetH) || isNaN(targetM)) return;
 
-        // Trigger if between -10 min (ongoing) and +15 min (approaching)
-        if (diffMin >= -10 && diffMin <= 15) {
-          const key = `${dir.id}_${dir.directive_date}_${dir.directive_time}`;
-          if (!alertedIdsRef.current.has(key)) {
-            due.push({ ...dir, diffMinutes: diffMin });
+          const targetTotalMin = targetH * 60 + targetM;
+          const diffMin = targetTotalMin - nowTotalMin;
+
+          // Trigger if between -10 min (ongoing) and +15 min (approaching)
+          if (diffMin >= -10 && diffMin <= 15) {
+            const key = `dir_${dir.id}_${dir.directive_date}_${dir.directive_time}`;
+            if (!alertedIdsRef.current.has(key)) {
+              due.push({
+                id: `dir_${dir.id}`,
+                dedupKey: key,
+                sourceType: 'directiva',
+                badge: 'DIRECTIVA',
+                title: `AULA ${dir.classroom}`,
+                time: dir.directive_time,
+                text: dir.requirements,
+                subtitle: `Aula ${dir.classroom} • Fecha: ${dir.directive_date}`,
+                creator: dir.created_by_email,
+                diffMinutes: diffMin
+              });
+            }
           }
-        }
-      });
+        });
+      }
+
+      // 2. Calendar Events check (Lunes a Viernes)
+      if (eventsList && eventsList.length > 0) {
+        eventsList.forEach(evt => {
+          if (!evt.day_of_week) return;
+          if (normalizeDay(evt.day_of_week) !== todayDayName) return;
+
+          const timeMatch = (evt.time_range || '').match(/(\d{1,2}):(\d{2})/);
+          if (!timeMatch) return;
+
+          const targetH = parseInt(timeMatch[1], 10);
+          const targetM = parseInt(timeMatch[2], 10);
+          if (isNaN(targetH) || isNaN(targetM)) return;
+
+          const targetTotalMin = targetH * 60 + targetM;
+          const diffMin = targetTotalMin - nowTotalMin;
+
+          // Trigger if between -10 min (ongoing) and +15 min (approaching)
+          if (diffMin >= -10 && diffMin <= 15) {
+            const timeStr = `${String(targetH).padStart(2, '0')}:${String(targetM).padStart(2, '0')}`;
+            const key = `evt_${evt.id}_${todayStr}_${timeStr}`;
+            if (!alertedIdsRef.current.has(key)) {
+              due.push({
+                id: `evt_${evt.id}`,
+                dedupKey: key,
+                sourceType: 'evento',
+                badge: 'EVENTO',
+                title: (evt.title || 'Evento').toUpperCase(),
+                time: timeStr,
+                text: evt.description || evt.title,
+                subtitle: `${evt.day_of_week} • Agenda Semanal (${evt.time_range})`,
+                creator: evt.created_by_email,
+                diffMinutes: diffMin
+              });
+            }
+          }
+        });
+      }
 
       if (due.length > 0) {
         due.forEach(d => {
-          alertedIdsRef.current.add(`${d.id}_${d.directive_date}_${d.directive_time}`);
+          alertedIdsRef.current.add(d.dedupKey);
         });
         setUpcomingTasks(due);
         setShowModal(true);
@@ -201,7 +257,7 @@ export default function ManagementPage() {
     checkUpcoming();
     const interval = setInterval(checkUpcoming, 10000);
     return () => clearInterval(interval);
-  }, [directivesList]);
+  }, [directivesList, eventsList]);
 
   // 50-second auto-close countdown
   useEffect(() => {
@@ -356,11 +412,15 @@ export default function ManagementPage() {
     e.preventDefault();
     if (!eventTitle.trim()) return;
 
+    const formattedTime = eventTime 
+      ? (eventEndTime ? `${eventTime} - ${eventEndTime}` : `${eventTime} hs`)
+      : 'Todo el día';
+
     const newItem = {
       day_of_week: eventDay,
       title: eventTitle,
       description: eventDesc,
-      time_range: eventTime || 'Todo el día',
+      time_range: formattedTime,
       created_by_email: userEmail || 'anonymous@ucema.edu.ar',
     };
 
@@ -377,6 +437,7 @@ export default function ManagementPage() {
     setEventTitle('');
     setEventDesc('');
     setEventTime('');
+    setEventEndTime('');
   };
 
   // Delete handlers
@@ -661,25 +722,35 @@ export default function ManagementPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Rango Horario</label>
+                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Horario (Inicio)</label>
                 <input
-                  type="text"
+                  type="time"
                   value={eventTime}
                   onChange={(e) => setEventTime(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                  placeholder="Ej: 08:00 - 09:30"
+                  required
                 />
               </div>
               <div>
-                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Descripción corta</label>
+                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Hasta (Opcional)</label>
                 <input
-                  type="text"
-                  value={eventDesc}
-                  onChange={(e) => setEventDesc(e.target.value)}
+                  type="time"
+                  value={eventEndTime}
+                  onChange={(e) => setEventEndTime(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                  placeholder="Ej: Setup micrófonos"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Descripción corta</label>
+              <input
+                type="text"
+                value={eventDesc}
+                onChange={(e) => setEventDesc(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                placeholder="Ej: Setup micrófonos"
+              />
             </div>
 
             <button
@@ -759,29 +830,36 @@ export default function ManagementPage() {
               {upcomingTasks.map((task) => (
                 <div 
                   key={task.id}
-                  className="bg-[#141418] border border-red-900/40 p-4 rounded-lg flex flex-col gap-2 relative overflow-hidden"
+                  className="bg-[#141418] border border-red-900/40 p-4 rounded-lg flex flex-col gap-2 relative overflow-hidden shadow-md"
                 >
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-red-400 font-mono text-sm tracking-wide">
-                        {task.classroom}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                        task.sourceType === 'evento' 
+                          ? 'bg-amber-950/80 border border-amber-800 text-amber-300' 
+                          : 'bg-[#940028]/40 border border-[#940028] text-red-200'
+                      }`}>
+                        {task.badge}
                       </span>
-                      <span className="text-[11px] font-mono bg-red-950 border border-red-800 text-red-300 px-2 py-0.5 rounded flex items-center gap-1">
-                        <Clock size={12} /> {task.directive_time} hs
+                      <span className="font-bold text-white font-mono text-sm tracking-wide">
+                        {task.title}
+                      </span>
+                      <span className="text-[11px] font-mono bg-red-950 border border-red-800 text-red-200 px-2 py-0.5 rounded flex items-center gap-1 font-bold">
+                        <Clock size={12} /> {task.time} hs
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-amber-400 font-mono">
+                    <span className="text-xs font-bold text-amber-400 font-mono flex-shrink-0">
                       {task.diffMinutes > 0 ? `Faltan ${task.diffMinutes} min` : task.diffMinutes === 0 ? '¡COMIENZA AHORA!' : 'En curso'}
                     </span>
                   </div>
 
                   <p className="text-zinc-100 text-xs font-medium leading-relaxed bg-zinc-950/70 p-3 rounded border border-zinc-900">
-                    {task.requirements}
+                    {task.text}
                   </p>
 
                   <div className="flex justify-between items-center text-[10px] text-zinc-500 font-mono pt-1">
-                    <span>Fecha: {task.directive_date}</span>
-                    <span>Asignó: {task.created_by_email}</span>
+                    <span>{task.subtitle}</span>
+                    {task.creator && <span>Asignó: {task.creator}</span>}
                   </div>
                 </div>
               ))}
