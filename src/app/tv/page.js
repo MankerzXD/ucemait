@@ -252,14 +252,41 @@ export default function TvDashboardPage() {
     async function initDashboard() {
       await fetchInitialData();
       
-      // Supabase Real-time subscriber
+      // Supabase Real-time subscriber - INSTANT MIRROR
       channel = supabase
-        .channel('dashboard-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, fetchInitialData)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'observations' }, fetchInitialData)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_events' }, fetchInitialData)
+        .channel('dashboard-tv-live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setDirectives(prev => [payload.new, ...prev.filter(d => d.id !== payload.new.id)]);
+          } else if (payload.eventType === 'DELETE') {
+            setDirectives(prev => prev.filter(d => d.id !== payload.old.id));
+          } else if (payload.eventType === 'UPDATE') {
+            setDirectives(prev => prev.map(d => d.id === payload.new.id ? payload.new : d));
+          }
+          fetchInitialData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'observations' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setObservations(prev => [payload.new, ...prev.filter(o => o.id !== payload.new.id)]);
+          } else if (payload.eventType === 'DELETE') {
+            setObservations(prev => prev.filter(o => o.id !== payload.old.id));
+          } else if (payload.eventType === 'UPDATE') {
+            setObservations(prev => prev.map(o => o.id === payload.new.id ? payload.new : o));
+          }
+          fetchInitialData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_events' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setEvents(prev => [payload.new, ...prev.filter(e => e.id !== payload.new.id)]);
+          } else if (payload.eventType === 'DELETE') {
+            setEvents(prev => prev.filter(e => e.id !== payload.old.id));
+          } else if (payload.eventType === 'UPDATE') {
+            setEvents(prev => prev.map(e => e.id === payload.new.id ? payload.new : e));
+          }
+          fetchInitialData();
+        })
         .subscribe((status) => {
-          console.log('Realtime subscription status:', status);
+          console.log('TV Realtime mirror status:', status);
         });
     }
 
@@ -274,15 +301,15 @@ export default function TvDashboardPage() {
 
   const fetchInitialData = async () => {
     try {
-      const { data: dirs, error: errDirs } = await supabase.from('directives').select('*');
+      const { data: dirs, error: errDirs } = await supabase.from('directives').select('*').order('created_at', { ascending: false });
       if (errDirs) throw errDirs;
       if (dirs) setDirectives(dirs);
 
-      const { data: obs, error: errObs } = await supabase.from('observations').select('*');
+      const { data: obs, error: errObs } = await supabase.from('observations').select('*').order('created_at', { ascending: false });
       if (errObs) throw errObs;
       if (obs) setObservations(obs);
 
-      const { data: evts, error: errEvts } = await supabase.from('fixed_events').select('*');
+      const { data: evts, error: errEvts } = await supabase.from('fixed_events').select('*').order('created_at', { ascending: false });
       if (errEvts) throw errEvts;
       if (evts) setEvents(evts);
     } catch (err) {

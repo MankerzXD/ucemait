@@ -19,7 +19,10 @@ export default function ManagementPage() {
   const [directiveClassroom, setDirectiveClassroom] = useState('4D');
   const [directiveDate, setDirectiveDate] = useState(() => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   });
   const [directiveReq, setDirectiveReq] = useState('');
 
@@ -86,10 +89,37 @@ export default function ManagementPage() {
 
     // Supabase Real-time subscriber to keep dashboard synced in real time
     const channel = supabase
-      .channel('main-dashboard-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'observations' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_events' }, () => fetchData())
+      .channel('main-dashboard-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setDirectivesList(prev => [payload.new, ...prev.filter(d => d.id !== payload.new.id)]);
+        } else if (payload.eventType === 'DELETE') {
+          setDirectivesList(prev => prev.filter(d => d.id !== payload.old.id));
+        } else if (payload.eventType === 'UPDATE') {
+          setDirectivesList(prev => prev.map(d => d.id === payload.new.id ? payload.new : d));
+        }
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'observations' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setObservationsList(prev => [payload.new, ...prev.filter(o => o.id !== payload.new.id)]);
+        } else if (payload.eventType === 'DELETE') {
+          setObservationsList(prev => prev.filter(o => o.id !== payload.old.id));
+        } else if (payload.eventType === 'UPDATE') {
+          setObservationsList(prev => prev.map(o => o.id === payload.new.id ? payload.new : o));
+        }
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_events' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setEventsList(prev => [payload.new, ...prev.filter(e => e.id !== payload.new.id)]);
+        } else if (payload.eventType === 'DELETE') {
+          setEventsList(prev => prev.filter(e => e.id !== payload.old.id));
+        } else if (payload.eventType === 'UPDATE') {
+          setEventsList(prev => prev.map(e => e.id === payload.new.id ? payload.new : e));
+        }
+        fetchData();
+      })
       .subscribe();
 
     return () => {
