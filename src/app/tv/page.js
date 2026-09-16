@@ -352,6 +352,30 @@ export default function TvDashboardPage() {
   const directivesHoy = directives.filter(d => d.directive_date === todayStr);
   const directivesManana = directives.filter(d => d.directive_date === tomorrowStr);
 
+  // Helper to get active directives with actual content (only show if has information)
+  const getActiveDirectivesForDay = (directivesList) => {
+    if (!directivesList || directivesList.length === 0) return [];
+    const seen = new Set();
+    const result = [];
+    for (const dir of directivesList) {
+      if (!dir.requirements || !dir.requirements.trim()) continue;
+      const key = dir.classroom.toLowerCase().replace(/\s+/g, '');
+      if (!seen.has(key)) {
+        seen.add(key);
+        const fixed = FIXED_CLASSROOMS.find(fc => fc.dbName.toLowerCase().replace(/\s+/g, '') === key);
+        result.push({
+          displayName: fixed ? fixed.displayName : dir.classroom.toUpperCase(),
+          requirements: dir.requirements,
+          id: dir.id
+        });
+      }
+    }
+    return result;
+  };
+
+  const activeDirectivesHoy = getActiveDirectivesForDay(directivesHoy);
+  const activeDirectivesManana = getActiveDirectivesForDay(directivesManana);
+
   // Helper to filter calendar events by day
   const getEventsForDay = (dayName) => {
     return events.filter(e => e.day_of_week.toLowerCase() === dayName.toLowerCase());
@@ -385,84 +409,92 @@ export default function TvDashboardPage() {
       {/* TOP PANELS: LEFT (DIRECTIVAS & OBSERVACIONES) & RIGHT (EMBEDDED HELPDESK CALENDAR) */}
       <div className="relative z-10 grid grid-cols-12 gap-4 flex-grow h-0 min-h-0">
         
-        {/* LEFT COLUMN: SINGLE MODULE (DIRECTIVAS & OBSERVACIONES) */}
-        <section className="col-span-5 bg-[#0e0e11] border border-[#19191D] rounded-lg p-5 flex flex-col gap-5 h-full min-h-0">
+        {/* LEFT COLUMN: SINGLE MODULE (DIRECTIVAS 50% & OBSERVACIONES 50%) */}
+        <section className="col-span-5 bg-[#0e0e11] border border-[#19191D] rounded-lg p-5 flex flex-col gap-4 h-full min-h-0">
           
-          {/* DIRECTIVAS HEADER */}
-          <div className="flex justify-between items-center border-b border-[#19191D] pb-2">
-            <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase">DIRECTIVAS</h2>
-            <span className="text-[9px] text-zinc-500 font-mono">HOY + MAÑANA</span>
-          </div>
-
-          {/* DIRECTIVAS GRID */}
-          <div className="grid grid-cols-2 gap-4 flex-grow min-h-0 overflow-hidden">
-            
-            {/* HOY Column */}
-            <div className="flex flex-col gap-2 h-full min-h-0">
-              <div className="bg-[#141418] border border-[#19191D] px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
-                <span className="text-[11px] font-bold tracking-wide text-red-500">HOY</span>
-              </div>
-              
-              <div className="flex-grow overflow-y-auto no-scrollbar space-y-1.5 pr-1">
-                {FIXED_CLASSROOMS.map(classroom => {
-                  const dir = findDirective(directivesHoy, classroom.dbName);
-                  return (
-                    <div key={classroom.dbName} className="flex justify-between items-start text-[10.5px] py-1 border-b border-zinc-900/60 last:border-0 min-h-[26px]">
-                      <span className="text-zinc-500 font-bold uppercase tracking-wider w-20 flex-shrink-0">{classroom.displayName}</span>
-                      <span className="text-zinc-300 font-medium text-right flex-grow leading-tight pl-2">{dir ? dir.requirements : ''}</span>
-                    </div>
-                  );
-                })}
-              </div>
+          {/* TOP HALF: DIRECTIVAS (50% de alto) */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex justify-between items-center border-b border-[#19191D] pb-2 mb-2 flex-shrink-0">
+              <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase">DIRECTIVAS</h2>
+              <span className="text-[9px] text-zinc-500 font-mono">HOY + MAÑANA</span>
             </div>
 
-            {/* MAÑANA Column */}
-            <div className="flex flex-col gap-2 h-full min-h-0">
-              <div className="bg-[#141418] border border-[#19191D] px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
-                <span className="text-[11px] font-bold tracking-wide text-zinc-400">MAÑANA</span>
-              </div>
+            {/* DIRECTIVAS GRID (HOY & MAÑANA) */}
+            <div className="grid grid-cols-2 gap-3 flex-grow min-h-0 overflow-hidden">
               
-              <div className="flex-grow overflow-y-auto no-scrollbar space-y-1.5 pr-1">
-                {FIXED_CLASSROOMS.map(classroom => {
-                  const dir = findDirective(directivesManana, classroom.dbName);
-                  return (
-                    <div key={classroom.dbName} className="flex justify-between items-start text-[10.5px] py-1 border-b border-zinc-900/60 last:border-0 min-h-[26px]">
-                      <span className="text-zinc-500 font-bold uppercase tracking-wider w-20 flex-shrink-0">{classroom.displayName}</span>
-                      <span className="text-zinc-300 font-medium text-right flex-grow leading-tight pl-2">{dir ? dir.requirements : ''}</span>
+              {/* HOY Column */}
+              <div className="flex flex-col gap-2 h-full min-h-0">
+                <div className="bg-[#141418] border border-[#19191D] px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                  <span className="text-[11px] font-bold tracking-wide text-red-500">HOY</span>
+                </div>
+                
+                <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
+                  {activeDirectivesHoy.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono text-center py-4">
+                      SIN DIRECTIVAS ACTIVAS
                     </div>
-                  );
-                })}
+                  ) : (
+                    activeDirectivesHoy.map(item => (
+                      <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
+                        <span className="text-red-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                        <p className="text-zinc-200 text-xs font-medium leading-snug">{item.requirements}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
 
+              {/* MAÑANA Column */}
+              <div className="flex flex-col gap-2 h-full min-h-0">
+                <div className="bg-[#141418] border border-[#19191D] px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+                  <span className="text-[11px] font-bold tracking-wide text-zinc-400">MAÑANA</span>
+                </div>
+                
+                <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
+                  {activeDirectivesManana.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono text-center py-4">
+                      SIN DIRECTIVAS ACTIVAS
+                    </div>
+                  ) : (
+                    activeDirectivesManana.map(item => (
+                      <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
+                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                        <p className="text-zinc-200 text-xs font-medium leading-snug">{item.requirements}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
           </div>
 
-          {/* OBSERVACIONES SECTION - Ampliado para mejor visibilidad en TV */}
-          <div className="flex flex-col gap-3 mt-auto pt-4 border-t border-[#19191D] flex-shrink-0">
-            <div className="flex justify-between items-center">
+          {/* BOTTOM HALF: OBSERVACIONES (50% de alto) */}
+          <div className="flex-1 min-h-0 flex flex-col border-t border-[#19191D] pt-3">
+            <div className="flex justify-between items-center pb-2 mb-2 flex-shrink-0">
               <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase">OBSERVACIONES</h2>
               <span className="text-[9px] text-zinc-500 font-mono">ESTADO GENERAL</span>
             </div>
 
-            {/* Chips / Cards Container - Mayor Altura */}
-            <div className="overflow-y-auto no-scrollbar min-h-[135px] max-h-[200px]">
+            {/* Chips / Cards Container - Ocupa todo el alto de su 50% */}
+            <div className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1">
               {observations.length === 0 ? (
-                <div className="text-[10.5px] text-zinc-600 font-mono py-4 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-700"></span>
+                <div className="h-full flex items-center justify-center text-[11px] text-zinc-600 font-mono gap-2 py-4">
+                  <span className="w-2 h-2 rounded-full bg-zinc-700"></span>
                   SIN OBSERVACIONES NI EVENTOS DE ALERTA
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2.5">
+                <div className="flex flex-wrap gap-2.5 content-start">
                   {observations.map(obs => (
                     <div 
                       key={obs.id} 
-                      className={`bg-[#141418] border px-3 py-2 rounded-md flex items-center gap-2.5 text-[10.5px] font-medium transition hover:bg-[#19191D]/40 ${
+                      className={`bg-[#141418] border px-3 py-2 rounded-md flex items-center gap-2.5 text-[11px] font-medium transition hover:bg-[#19191D]/40 ${
                         obs.severity === 'danger' 
-                          ? 'border-red-955 text-red-400 bg-red-950/10' 
+                          ? 'border-red-955 text-red-400 bg-red-950/15' 
                           : obs.severity === 'warning' 
-                            ? 'border-amber-955 text-amber-400 bg-amber-950/10' 
+                            ? 'border-amber-955 text-amber-400 bg-amber-950/15' 
                             : 'border-[#19191D] text-zinc-300'
                       }`}
                     >
