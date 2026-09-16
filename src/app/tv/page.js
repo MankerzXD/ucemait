@@ -439,33 +439,34 @@ export default function TvDashboardPage() {
 
           </div>
 
-          {/* OBSERVACIONES SECTION */}
+          {/* OBSERVACIONES SECTION - Ampliado para mejor visibilidad en TV */}
           <div className="flex flex-col gap-3 mt-auto pt-4 border-t border-[#19191D] flex-shrink-0">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase">OBSERVACIONES</h2>
               <span className="text-[9px] text-zinc-500 font-mono">ESTADO GENERAL</span>
             </div>
 
-            {/* Chips Container */}
-            <div className="overflow-y-auto no-scrollbar max-h-[85px] min-h-[45px]">
+            {/* Chips / Cards Container - Mayor Altura */}
+            <div className="overflow-y-auto no-scrollbar min-h-[135px] max-h-[200px]">
               {observations.length === 0 ? (
-                <div className="text-[10px] text-zinc-600 font-mono py-2">
+                <div className="text-[10.5px] text-zinc-600 font-mono py-4 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-700"></span>
                   SIN OBSERVACIONES NI EVENTOS DE ALERTA
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2.5">
                   {observations.map(obs => (
                     <div 
                       key={obs.id} 
-                      className={`bg-[#141418] border px-2.5 py-1.5 rounded flex items-center gap-2 text-[10px] font-medium transition hover:bg-[#19191D]/40 ${
+                      className={`bg-[#141418] border px-3 py-2 rounded-md flex items-center gap-2.5 text-[10.5px] font-medium transition hover:bg-[#19191D]/40 ${
                         obs.severity === 'danger' 
-                          ? 'border-red-955 text-red-400 bg-red-950/5' 
+                          ? 'border-red-955 text-red-400 bg-red-950/10' 
                           : obs.severity === 'warning' 
-                            ? 'border-amber-955 text-amber-400 bg-amber-950/5' 
+                            ? 'border-amber-955 text-amber-400 bg-amber-950/10' 
                             : 'border-[#19191D] text-zinc-300'
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                         obs.severity === 'danger' ? 'bg-red-500 animate-pulse' : obs.severity === 'warning' ? 'bg-amber-500' : 'bg-zinc-400'
                       }`}></span>
                       <span className="leading-snug">{obs.text}</span>
