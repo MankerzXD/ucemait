@@ -498,8 +498,8 @@ export default function TvDashboardPage() {
         </section>
       </div>
 
-      {/* BOTTOM PANEL: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL) - Mayor Altura */}
-      <section className="relative z-10 bg-[#0e0e11] border border-[#19191D] rounded-lg p-5 flex flex-col h-[38%] min-h-[260px]">
+      {/* BOTTOM PANEL: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL) - 20% más bajo */}
+      <section className="relative z-10 bg-[#0e0e11] border border-[#19191D] rounded-lg p-3.5 flex flex-col h-[30%] min-h-[200px]">
 
         {/* 5-Column Almanac Grid */}
         <div className="grid grid-cols-5 gap-3 flex-grow overflow-hidden">
