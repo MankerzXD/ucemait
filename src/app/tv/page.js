@@ -470,7 +470,7 @@ export default function TvDashboardPage() {
     <main className="relative h-screen w-screen bg-[#09090b] text-zinc-100 flex flex-col p-6 gap-5 overflow-hidden select-none">
 
       {/* HEADER */}
-      <header className="relative z-10 grid grid-cols-3 items-center border-b border-[#19191D] bg-[#0e0e11] px-6 py-4 rounded-lg shadow-sm">
+      <header className="relative z-10 grid grid-cols-3 items-center border-b border-[#940028]/40 bg-[#0e0e11] px-6 py-4 rounded-lg shadow-sm shadow-[#940028]/10">
         <div className="flex items-center gap-3">
           {/* UCEMA Logo Design */}
           <img src="https://ucema.edu.ar/mailing/firmas-ucema/Firmas_Institucional/Firma_Institucional_Blanco/assets/img/LOGO.png" alt="UCEMA Logo" className="h-8 w-auto object-contain" />
@@ -509,9 +509,9 @@ export default function TvDashboardPage() {
               
               {/* HOY Column */}
               <div className="flex flex-col gap-2 h-full min-h-0">
-                <div className="bg-[#141418] border border-[#19191D] px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
-                  <span className="text-[11px] font-bold tracking-wide text-red-500">HOY</span>
+                <div className="bg-[#141418] border border-[#940028]/50 px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-[#940028]"></span>
+                  <span className="text-[11px] font-bold tracking-wide text-[#f1a3b3]">HOY</span>
                 </div>
                 
                 <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
@@ -523,9 +523,9 @@ export default function TvDashboardPage() {
                     activeDirectivesHoy.map(item => (
                       <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
                         <div className="flex justify-between items-center">
-                          <span className="text-red-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                          <span className="text-[#f1a3b3] font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
                           {item.time && (
-                            <span className="text-[10px] bg-red-950 border border-red-800 text-red-300 font-mono px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <span className="text-[10px] bg-[#4d0015] border border-[#7d0022] text-[#f8ccd5] font-mono px-1.5 py-0.5 rounded flex items-center gap-1">
                               <Clock size={10} /> {item.time} hs
                             </span>
                           )}

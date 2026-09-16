@@ -415,7 +415,7 @@ export default function ManagementPage() {
       <div className="absolute inset-0 tech-grid opacity-20 pointer-events-none"></div>
       
       {/* Top Navbar */}
-      <header className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-md py-4 px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 z-10">
+      <header className="border-b border-[#940028]/40 bg-zinc-900/90 backdrop-blur-md py-4 px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 z-10 shadow-sm shadow-[#940028]/10">
         <div className="flex items-center gap-3">
           <img src="https://ucema.edu.ar/mailing/firmas-ucema/Firmas_Institucional/Firma_Institucional_Blanco/assets/img/LOGO.png" alt="UCEMA Logo" className="h-7 w-auto object-contain" />
           <div>
@@ -520,7 +520,7 @@ export default function ManagementPage() {
 
             <button
               type="submit"
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold py-2 rounded transition cursor-pointer flex items-center justify-center gap-1.5 uppercase font-mono"
+              className="w-full bg-[#940028] hover:bg-[#7d0022] text-white text-xs font-semibold py-2.5 rounded transition cursor-pointer flex items-center justify-center gap-2 uppercase font-mono shadow-md shadow-[#940028]/25 active:scale-[0.99]"
             >
               <PlusCircle size={14} /> Registrar Directiva
             </button>
@@ -588,7 +588,7 @@ export default function ManagementPage() {
 
             <button
               type="submit"
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold py-2 rounded transition cursor-pointer flex items-center justify-center gap-1.5 uppercase font-mono"
+              className="w-full bg-[#940028] hover:bg-[#7d0022] text-white text-xs font-semibold py-2.5 rounded transition cursor-pointer flex items-center justify-center gap-2 uppercase font-mono shadow-md shadow-[#940028]/25 active:scale-[0.99]"
             >
               <PlusCircle size={14} /> Registrar Observación
             </button>
@@ -684,7 +684,7 @@ export default function ManagementPage() {
 
             <button
               type="submit"
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold py-2 rounded transition cursor-pointer flex items-center justify-center gap-1.5 uppercase font-mono"
+              className="w-full bg-[#940028] hover:bg-[#7d0022] text-white text-xs font-semibold py-2.5 rounded transition cursor-pointer flex items-center justify-center gap-2 uppercase font-mono shadow-md shadow-[#940028]/25 active:scale-[0.99]"
             >
               <PlusCircle size={14} /> Registrar Evento
             </button>

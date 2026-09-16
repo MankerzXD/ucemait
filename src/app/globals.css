@@ -9,7 +9,13 @@
   --border-subtle: #1c1c21;
   --border-active: #27272a;
   
-  --crimson: #c20e2c; /* UCEMA Crimson red */
+  /* UCEMA Official Institutional Palette */
+  --ucema-primary: #940028; /* RGB: 148, 0, 40 */
+  --ucema-dark: #66001c;
+  --ucema-deep: #400011;
+  --ucema-light: #b30032;
+  --ucema-accent: #d91a4d;
+  --crimson: #940028;
   
   --green: #22c55e;
   --yellow: #eab308;
@@ -21,7 +27,26 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-crimson: var(--crimson);
+  --color-crimson: var(--ucema-primary);
+  --color-ucema: #940028;
+  --color-ucema-dark: #66001c;
+  --color-ucema-deep: #400011;
+  --color-ucema-light: #b30032;
+  --color-ucema-accent: #d91a4d;
+
+  /* Override standard red scale with UCEMA Burgundy scale */
+  --color-red-50: #fdf2f4;
+  --color-red-100: #fbe5e9;
+  --color-red-200: #f8ccd5;
+  --color-red-300: #f1a3b3;
+  --color-red-400: #e04b6c;
+  --color-red-500: #b80033;
+  --color-red-600: #940028; /* UCEMA OFFICIAL */
+  --color-red-700: #7d0022;
+  --color-red-800: #66001c;
+  --color-red-900: #4d0015;
+  --color-red-950: #33000e;
+
   --color-zinc-950: var(--background);
   --color-zinc-900: var(--bg-card-header);
   --color-zinc-800: var(--border-subtle);
