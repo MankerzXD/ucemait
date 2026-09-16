@@ -3,13 +3,18 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { ArrowLeft, Shield, Users, UserPlus, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Shield, Users, UserPlus, FileText, CheckCircle2, Tv, Moon, Sun, ExternalLink } from 'lucide-react';
 
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [currentUserEmail, setCurrentUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
+
+  // TV Theme management states
+  const [tvTheme, setTvTheme] = useState('dark');
+  const [themeSaving, setThemeSaving] = useState(false);
+  const [themeMessage, setThemeMessage] = useState('');
 
   // Role management states
   const [targetEmail, setTargetEmail] = useState('');
@@ -73,10 +78,77 @@ export default function AdminPage() {
 
       setLoading(false);
       fetchData(role);
+      fetchTvTheme();
     }
 
     checkPrivileges();
   }, []);
+
+  // Realtime subscription for TV theme in admin panel
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-tv-settings-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tv_settings' }, (payload) => {
+        if (payload.new && payload.new.key === 'tv_theme') {
+          setTvTheme(payload.new.value);
+        }
+      })
+      .subscribe();
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'demo_tv_theme' && e.newValue) {
+        setTvTheme(e.newValue);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  const fetchTvTheme = async () => {
+    try {
+      const { data } = await supabase
+        .from('tv_settings')
+        .select('value')
+        .eq('key', 'tv_theme')
+        .single();
+      if (data?.value) {
+        setTvTheme(data.value);
+      } else {
+        const localTheme = localStorage.getItem('demo_tv_theme');
+        if (localTheme) setTvTheme(localTheme);
+      }
+    } catch {
+      const localTheme = localStorage.getItem('demo_tv_theme');
+      if (localTheme) setTvTheme(localTheme);
+    }
+  };
+
+  const handleThemeChange = async (newTheme) => {
+    if (newTheme === tvTheme && !themeSaving) return;
+    setTvTheme(newTheme);
+    setThemeSaving(true);
+    setThemeMessage('');
+
+    try {
+      const { error } = await supabase
+        .from('tv_settings')
+        .upsert({ key: 'tv_theme', value: newTheme, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      localStorage.setItem('demo_tv_theme', newTheme);
+      setThemeMessage(`¡Tema de TV cambiado a ${newTheme === 'dark' ? 'MODO OSCURO' : 'MODO CLARO (BLANCO)'}!`);
+    } catch (err) {
+      console.error('Error updating TV theme:', err);
+      localStorage.setItem('demo_tv_theme', newTheme);
+      setThemeMessage(`[Demo] Tema cambiado a ${newTheme === 'dark' ? 'MODO OSCURO' : 'MODO CLARO (BLANCO)'}`);
+    } finally {
+      setThemeSaving(false);
+      setTimeout(() => setThemeMessage(''), 4000);
+    }
+  };
 
   const fetchData = async (role) => {
     try {
@@ -261,8 +333,109 @@ export default function AdminPage() {
           </div>
         </section>
 
-        {/* Right Column: User Management (Super Admin only) */}
-        <section className="bg-zinc-900/60 border border-zinc-800 rounded p-5 flex flex-col gap-4">
+        {/* Right Column: TV Theme Controller & User Management */}
+        <div className="flex flex-col gap-6">
+
+          {/* TV Display Theme Control */}
+          <section className="bg-zinc-900/60 border border-zinc-800 rounded p-5 flex flex-col gap-4">
+            <div className="border-b border-zinc-800 pb-3 flex justify-between items-start">
+              <div>
+                <h2 className="text-sm font-bold tracking-widest text-[#f1a3b3] uppercase flex items-center gap-2">
+                  <Tv size={16} className="text-[#940028]" /> Tema Pantalla TV
+                </h2>
+                <p className="text-[10px] text-zinc-500 uppercase">
+                  Control remoto en vivo del display institucional
+                </p>
+              </div>
+              <a 
+                href="/tv" 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-[10px] font-mono text-zinc-300 hover:text-white flex items-center gap-1 bg-zinc-850 hover:bg-zinc-800 px-2.5 py-1 rounded transition border border-zinc-750"
+              >
+                Abrir TV <ExternalLink size={10} />
+              </a>
+            </div>
+
+            {themeMessage && (
+              <div className="p-2.5 bg-emerald-950/40 border border-emerald-900 text-emerald-400 text-xs rounded font-mono flex items-center gap-1.5 animate-in fade-in duration-200">
+                <CheckCircle2 size={14} /> {themeMessage}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Dark Mode Button */}
+              <button
+                type="button"
+                onClick={() => handleThemeChange('dark')}
+                disabled={themeSaving}
+                className={`p-3 rounded-lg border text-left transition relative cursor-pointer flex flex-col gap-2 ${
+                  tvTheme === 'dark' 
+                    ? 'bg-zinc-950 border-[#940028] ring-2 ring-[#940028]/50 shadow-lg shadow-black/80' 
+                    : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700 opacity-65 hover:opacity-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`p-1.5 rounded-md border ${tvTheme === 'dark' ? 'bg-[#940028]/20 text-[#f1a3b3] border-[#940028]/40' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
+                    <Moon size={16} />
+                  </span>
+                  {tvTheme === 'dark' && (
+                    <span className="text-[9px] font-mono font-bold bg-[#940028] text-white px-1.5 py-0.5 rounded flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> ACTIVO
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+                    Modo Oscuro
+                  </div>
+                  <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">Fondo negro OLED de alto contraste</p>
+                </div>
+              </button>
+
+              {/* Light Mode Button */}
+              <button
+                type="button"
+                onClick={() => handleThemeChange('light')}
+                disabled={themeSaving}
+                className={`p-3 rounded-lg border text-left transition relative cursor-pointer flex flex-col gap-2 ${
+                  tvTheme === 'light' || tvTheme === 'white'
+                    ? 'bg-slate-100 border-[#940028] ring-2 ring-[#940028]/50 shadow-lg' 
+                    : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700 opacity-65 hover:opacity-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`p-1.5 rounded-md border ${(tvTheme === 'light' || tvTheme === 'white') ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
+                    <Sun size={16} />
+                  </span>
+                  {(tvTheme === 'light' || tvTheme === 'white') && (
+                    <span className="text-[9px] font-mono font-bold bg-[#940028] text-white px-1.5 py-0.5 rounded flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> ACTIVO
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className={`text-xs font-bold font-mono ${(tvTheme === 'light' || tvTheme === 'white') ? 'text-slate-900' : 'text-zinc-200'}`}>
+                    Modo Blanco
+                  </div>
+                  <p className={`text-[10px] leading-tight mt-0.5 ${(tvTheme === 'light' || tvTheme === 'white') ? 'text-slate-600' : 'text-zinc-400'}`}>
+                    Fondo claro corporativo institucional
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 border-t border-zinc-800/80 pt-2">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                TRANSMISIÓN EN VIVO A PANTALLA
+              </span>
+              <span className="text-zinc-400 font-bold">{themeSaving ? 'SINCRONIZANDO...' : 'SINCRONIZADO'}</span>
+            </div>
+          </section>
+
+          {/* User Management (Super Admin only) */}
+          <section className="bg-zinc-900/60 border border-zinc-800 rounded p-5 flex flex-col gap-4">
           <div className="border-b border-zinc-800 pb-3">
             <h2 className="text-sm font-bold tracking-widest text-red-500 uppercase flex items-center gap-2">
               <Users size={16} /> Gestión de Roles
@@ -333,6 +506,8 @@ export default function AdminPage() {
             </>
           )}
         </section>
+
+        </div>
 
       </main>
     </div>

@@ -67,8 +67,21 @@ CREATE TABLE IF NOT EXISTS public.otp_codes (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 6. Create table for global TV settings (Theme: dark / light)
+CREATE TABLE IF NOT EXISTS public.tv_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO public.tv_settings (key, value)
+VALUES ('tv_theme', 'dark')
+ON CONFLICT (key) DO NOTHING;
+
+ALTER TABLE public.tv_settings REPLICA IDENTITY FULL;
+
 -- Add Supabase Publication for Realtime replication
 BEGIN;
   DROP PUBLICATION IF EXISTS supabase_realtime;
-  CREATE PUBLICATION supabase_realtime FOR TABLE public.directives, public.observations, public.fixed_events;
+  CREATE PUBLICATION supabase_realtime FOR TABLE public.directives, public.observations, public.fixed_events, public.tv_settings;
 COMMIT;

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Clock, ShieldAlert, Cpu, Activity, Database, Flame, Wifi, Layers, CalendarRange, Bell, X } from 'lucide-react';
 
 // --- HELPER COMPONENT: DailyEventsList with paused auto-scroll ---
-function DailyEventsList({ events }) {
+function DailyEventsList({ events, isLight }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -67,11 +67,24 @@ function DailyEventsList({ events }) {
       className="flex-grow overflow-y-auto no-scrollbar p-2.5 space-y-2 h-full"
     >
       {events.map(evt => (
-        <div key={evt.id} className="bg-[#141418] border border-zinc-800 p-3 rounded-md flex flex-col gap-1 transition hover:border-zinc-700 shadow-sm">
-          <span className="text-xs font-bold text-red-400 font-mono tracking-wide">{evt.time_range}</span>
-          <h4 className="text-[13px] font-bold text-white leading-snug">{evt.title}</h4>
+        <div 
+          key={evt.id} 
+          className={`p-3 rounded-md flex flex-col gap-1 transition shadow-sm ${
+            isLight 
+              ? 'bg-white border border-slate-200 hover:border-[#940028]/40 text-slate-800' 
+              : 'bg-[#141418] border border-zinc-800 hover:border-zinc-700 text-white'
+          }`}
+        >
+          <span className={`text-xs font-bold font-mono tracking-wide ${isLight ? 'text-[#940028]' : 'text-red-400'}`}>
+            {evt.time_range}
+          </span>
+          <h4 className={`text-[13px] font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
+            {evt.title}
+          </h4>
           {evt.description && (
-            <p className="text-xs text-zinc-400 line-clamp-2 leading-tight mt-0.5">{evt.description}</p>
+            <p className={`text-xs line-clamp-2 leading-tight mt-0.5 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+              {evt.description}
+            </p>
           )}
         </div>
       ))}
@@ -202,6 +215,10 @@ const findDirective = (list, dbName) => {
 };
 
 export default function TvDashboardPage() {
+  // Theme state ('dark' | 'light' / 'white')
+  const [tvTheme, setTvTheme] = useState('dark');
+  const isLight = tvTheme === 'light' || tvTheme === 'white';
+
   // Clock state
   const [timeStr, setTimeStr] = useState('19:57:42');
   const [dateStr, setDateStr] = useState('27 MAY 2026');
@@ -339,6 +356,11 @@ export default function TvDashboardPage() {
       // Supabase Real-time subscriber - INSTANT MIRROR
       channel = supabase
         .channel('dashboard-tv-live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tv_settings' }, (payload) => {
+          if (payload.new && payload.new.key === 'tv_theme') {
+            setTvTheme(payload.new.value);
+          }
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             setDirectives(prev => [payload.new, ...prev.filter(d => d.id !== payload.new.id)]);
@@ -385,6 +407,14 @@ export default function TvDashboardPage() {
 
   const fetchInitialData = async () => {
     try {
+      const { data: themeData } = await supabase.from('tv_settings').select('value').eq('key', 'tv_theme').single();
+      if (themeData?.value) {
+        setTvTheme(themeData.value);
+      } else {
+        const localTheme = localStorage.getItem('demo_tv_theme');
+        if (localTheme) setTvTheme(localTheme);
+      }
+
       const { data: dirs, error: errDirs } = await supabase.from('directives').select('*').order('created_at', { ascending: false });
       if (errDirs) throw errDirs;
       if (dirs) setDirectives(dirs);
@@ -404,6 +434,8 @@ export default function TvDashboardPage() {
   };
 
   const loadDemoData = () => {
+    const localTheme = localStorage.getItem('demo_tv_theme');
+    if (localTheme) setTvTheme(localTheme);
     setDirectives(JSON.parse(localStorage.getItem('demo_directives') || '[]'));
     setObservations(JSON.parse(localStorage.getItem('demo_observations') || '[]'));
     setEvents(JSON.parse(localStorage.getItem('demo_events') || '[]'));
@@ -412,6 +444,9 @@ export default function TvDashboardPage() {
   // 4. Listen to storage changes for cross-tab sync in Demo Mode
   useEffect(() => {
     const handleStorageChange = (e) => {
+      if (e.key === 'demo_tv_theme' && e.newValue) {
+        setTvTheme(e.newValue);
+      }
       if (e.key === 'demo_directives' || e.key === 'demo_observations' || e.key === 'demo_events') {
         loadDemoData();
       }
@@ -467,16 +502,27 @@ export default function TvDashboardPage() {
   };
 
   return (
-    <main className="relative h-screen w-screen bg-[#09090b] text-zinc-100 flex flex-col p-6 gap-5 overflow-hidden select-none">
+    <main className={`relative h-screen w-screen flex flex-col p-6 gap-5 overflow-hidden select-none transition-colors duration-500 ${isLight ? 'bg-[#f1f5f9] text-slate-900' : 'bg-[#09090b] text-zinc-100'}`}>
 
       {/* HEADER */}
-      <header className="relative z-10 grid grid-cols-3 items-center border-b border-[#940028]/40 bg-[#0e0e11] px-6 py-4 rounded-lg shadow-sm shadow-[#940028]/10">
+      <header className={`relative z-10 grid grid-cols-3 items-center border-b px-6 py-4 rounded-lg shadow-sm transition-colors duration-300 ${
+        isLight 
+          ? 'bg-white border-[#940028]/30 shadow-[#940028]/5' 
+          : 'bg-[#0e0e11] border-[#940028]/40 shadow-[#940028]/10'
+      }`}>
         <div className="flex items-center gap-3">
           {/* UCEMA Logo Design */}
-          <img src="https://ucema.edu.ar/mailing/firmas-ucema/Firmas_Institucional/Firma_Institucional_Blanco/assets/img/LOGO.png" alt="UCEMA Logo" className="h-8 w-auto object-contain" />
-          <div className="border-l border-[#19191D] pl-3">
-            <h1 className="font-bold text-sm tracking-wider text-white">DASHBOARD UCEMA</h1>
-            <p className="text-[10px] text-zinc-400">Soporte Técnico</p>
+          <img 
+            src="/ucema-logo.png" 
+            alt="UCEMA Logo" 
+            className="h-9 w-auto rounded object-contain shadow-xs" 
+            onError={(e) => {
+              e.currentTarget.src = "https://ucema.edu.ar/mailing/firmas-ucema/Firmas_Institucional/Firma_Institucional_Blanco/assets/img/LOGO.png";
+            }}
+          />
+          <div className={`border-l pl-3 ${isLight ? 'border-slate-300' : 'border-[#19191D]'}`}>
+            <h1 className={`font-bold text-sm tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>DASHBOARD UCEMA</h1>
+            <p className={`text-[10px] ${isLight ? 'text-[#940028] font-bold' : 'text-zinc-400'}`}>Soporte Técnico</p>
           </div>
         </div>
 
@@ -484,9 +530,9 @@ export default function TvDashboardPage() {
 
         <div className="flex justify-end items-center gap-4">
           <div className="flex items-center gap-3 text-right">
-            <span className="text-xs text-zinc-400 font-medium">{dateStr}</span>
-            <span className="text-zinc-700">|</span>
-            <span className="text-sm text-white font-semibold tracking-wider">{timeStr}</span>
+            <span className={`text-xs font-medium ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>{dateStr}</span>
+            <span className={isLight ? 'text-slate-300' : 'text-zinc-700'}>|</span>
+            <span className={`text-sm tracking-wider ${isLight ? 'text-slate-900 font-bold' : 'text-white font-semibold'}`}>{timeStr}</span>
           </div>
         </div>
       </header>
@@ -495,13 +541,15 @@ export default function TvDashboardPage() {
       <div className="relative z-10 grid grid-cols-12 gap-4 flex-grow h-0 min-h-0">
         
         {/* LEFT COLUMN: SINGLE MODULE (DIRECTIVAS 50% & OBSERVACIONES 50%) */}
-        <section className="col-span-5 bg-[#0e0e11] border border-[#19191D] rounded-lg p-5 flex flex-col gap-4 h-full min-h-0">
+        <section className={`col-span-5 border rounded-lg p-5 flex flex-col gap-4 h-full min-h-0 transition-colors duration-300 ${
+          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+        }`}>
           
           {/* TOP HALF: DIRECTIVAS (50% de alto) */}
           <div className="flex-1 min-h-0 flex flex-col">
-            <div className="flex justify-between items-center border-b border-[#19191D] pb-2 mb-2 flex-shrink-0">
-              <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase">DIRECTIVAS</h2>
-              <span className="text-[9px] text-zinc-500 font-mono">HOY + MAÑANA</span>
+            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${isLight ? 'border-slate-200' : 'border-[#19191D]'}`}>
+              <h2 className={`text-xs font-bold tracking-widest uppercase ${isLight ? 'text-[#940028]' : 'text-zinc-400'}`}>DIRECTIVAS</h2>
+              <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>HOY + MAÑANA</span>
             </div>
 
             {/* DIRECTIVAS GRID (HOY & MAÑANA) */}
@@ -509,28 +557,45 @@ export default function TvDashboardPage() {
               
               {/* HOY Column */}
               <div className="flex flex-col gap-2 h-full min-h-0">
-                <div className="bg-[#141418] border border-[#940028]/50 px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
+                <div className={`px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0 border ${
+                  isLight ? 'bg-[#940028]/10 border-[#940028]/30' : 'bg-[#141418] border-[#940028]/50'
+                }`}>
                   <span className="w-2 h-2 rounded-full bg-[#940028]"></span>
-                  <span className="text-[11px] font-bold tracking-wide text-[#f1a3b3]">HOY</span>
+                  <span className={`text-[11px] font-bold tracking-wide ${isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'}`}>HOY</span>
                 </div>
                 
                 <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
                   {activeDirectivesHoy.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono text-center py-4">
+                    <div className={`h-full flex items-center justify-center text-[10px] font-mono text-center py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
                       SIN DIRECTIVAS ACTIVAS
                     </div>
                   ) : (
                     activeDirectivesHoy.map(item => (
-                      <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
+                      <div 
+                        key={item.id} 
+                        className={`border p-2.5 rounded flex flex-col gap-1 transition shadow-xs ${
+                          isLight 
+                            ? 'bg-slate-50 border-slate-200 hover:border-[#940028]/40' 
+                            : 'bg-[#141418] border-zinc-850'
+                        }`}
+                      >
                         <div className="flex justify-between items-center">
-                          <span className="text-[#f1a3b3] font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                          <span className={`font-bold uppercase tracking-wider text-[11px] font-mono ${
+                            isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'
+                          }`}>{item.displayName}</span>
                           {item.time && (
-                            <span className="text-[10px] bg-[#4d0015] border border-[#7d0022] text-[#f8ccd5] font-mono px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                              isLight 
+                                ? 'bg-[#940028] text-white border border-[#7d0022]' 
+                                : 'bg-[#4d0015] border border-[#7d0022] text-[#f8ccd5]'
+                            }`}>
                               <Clock size={10} /> {item.time} hs
                             </span>
                           )}
                         </div>
-                        <p className="text-zinc-200 text-xs font-medium leading-snug">{item.requirements}</p>
+                        <p className={`text-xs font-medium leading-snug ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
+                          {item.requirements}
+                        </p>
                       </div>
                     ))
                   )}
@@ -539,28 +604,45 @@ export default function TvDashboardPage() {
 
               {/* MAÑANA Column */}
               <div className="flex flex-col gap-2 h-full min-h-0">
-                <div className="bg-[#141418] border border-[#19191D] px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
-                  <span className="text-[11px] font-bold tracking-wide text-zinc-400">MAÑANA</span>
+                <div className={`px-3 py-1.5 rounded-md flex items-center gap-2 flex-shrink-0 border ${
+                  isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#141418] border-[#19191D]'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
+                  <span className={`text-[11px] font-bold tracking-wide ${isLight ? 'text-slate-700' : 'text-zinc-400'}`}>MAÑANA</span>
                 </div>
                 
                 <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
                   {activeDirectivesManana.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono text-center py-4">
+                    <div className={`h-full flex items-center justify-center text-[10px] font-mono text-center py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
                       SIN DIRECTIVAS ACTIVAS
                     </div>
                   ) : (
                     activeDirectivesManana.map(item => (
-                      <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
+                      <div 
+                        key={item.id} 
+                        className={`border p-2.5 rounded flex flex-col gap-1 transition shadow-xs ${
+                          isLight 
+                            ? 'bg-slate-50 border-slate-200' 
+                            : 'bg-[#141418] border-zinc-850'
+                        }`}
+                      >
                         <div className="flex justify-between items-center">
-                          <span className="text-zinc-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                          <span className={`font-bold uppercase tracking-wider text-[11px] font-mono ${
+                            isLight ? 'text-slate-700' : 'text-zinc-400'
+                          }`}>{item.displayName}</span>
                           {item.time && (
-                            <span className="text-[10px] bg-zinc-900 border border-zinc-700 text-zinc-300 font-mono px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                              isLight 
+                                ? 'bg-slate-200 text-slate-800 border border-slate-300' 
+                                : 'bg-zinc-900 border border-zinc-700 text-zinc-300'
+                            }`}>
                               <Clock size={10} /> {item.time} hs
                             </span>
                           )}
                         </div>
-                        <p className="text-zinc-200 text-xs font-medium leading-snug">{item.requirements}</p>
+                        <p className={`text-xs font-medium leading-snug ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
+                          {item.requirements}
+                        </p>
                       </div>
                     ))
                   )}
@@ -571,17 +653,17 @@ export default function TvDashboardPage() {
           </div>
 
           {/* BOTTOM HALF: OBSERVACIONES (50% de alto) */}
-          <div className="flex-1 min-h-0 flex flex-col border-t border-[#19191D] pt-3">
+          <div className={`flex-1 min-h-0 flex flex-col border-t pt-3 ${isLight ? 'border-slate-200' : 'border-[#19191D]'}`}>
             <div className="flex justify-between items-center pb-2 mb-2 flex-shrink-0">
-              <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase">OBSERVACIONES</h2>
-              <span className="text-[9px] text-zinc-500 font-mono">ESTADO GENERAL</span>
+              <h2 className={`text-xs font-bold tracking-widest uppercase ${isLight ? 'text-[#940028]' : 'text-zinc-400'}`}>OBSERVACIONES</h2>
+              <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>ESTADO GENERAL</span>
             </div>
 
             {/* Chips / Cards Container - Ocupa todo el alto de su 50% */}
             <div className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1">
               {observations.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-[11px] text-zinc-600 font-mono gap-2 py-4">
-                  <span className="w-2 h-2 rounded-full bg-zinc-700"></span>
+                <div className={`h-full flex items-center justify-center text-[11px] font-mono gap-2 py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
+                  <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-300' : 'bg-zinc-700'}`}></span>
                   SIN OBSERVACIONES NI EVENTOS DE ALERTA
                 </div>
               ) : (
@@ -589,16 +671,22 @@ export default function TvDashboardPage() {
                   {observations.map(obs => (
                     <div 
                       key={obs.id} 
-                      className={`bg-[#141418] border px-3 py-2 rounded-md flex items-center gap-2.5 text-[11px] font-medium transition hover:bg-[#19191D]/40 ${
+                      className={`border px-3 py-2 rounded-md flex items-center gap-2.5 text-[11px] font-medium transition ${
                         obs.severity === 'danger' 
-                          ? 'border-red-955 text-red-400 bg-red-950/15' 
+                          ? isLight 
+                            ? 'border-red-300 text-red-800 bg-red-50 shadow-xs' 
+                            : 'border-red-955 text-red-400 bg-red-950/15' 
                           : obs.severity === 'warning' 
-                            ? 'border-amber-955 text-amber-400 bg-amber-950/15' 
-                            : 'border-[#19191D] text-zinc-300'
+                            ? isLight 
+                              ? 'border-amber-300 text-amber-800 bg-amber-50 shadow-xs' 
+                              : 'border-amber-955 text-amber-400 bg-amber-950/15' 
+                            : isLight 
+                              ? 'border-slate-200 text-slate-800 bg-slate-100 shadow-xs' 
+                              : 'border-[#19191D] text-zinc-300 bg-[#141418]'
                       }`}
                     >
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        obs.severity === 'danger' ? 'bg-red-500 animate-pulse' : obs.severity === 'warning' ? 'bg-amber-500' : 'bg-zinc-400'
+                        obs.severity === 'danger' ? 'bg-red-500 animate-pulse' : obs.severity === 'warning' ? 'bg-amber-500' : isLight ? 'bg-slate-400' : 'bg-zinc-400'
                       }`}></span>
                       <span className="leading-snug">{obs.text}</span>
                     </div>
@@ -611,7 +699,9 @@ export default function TvDashboardPage() {
         </section>
 
         {/* RIGHT COLUMN: CALENDARIO HELPDESK EMBEBIDO (100% del espacio del div) */}
-        <section className="col-span-7 bg-white border border-[#19191D] rounded-lg flex flex-col h-full min-h-0 overflow-hidden">
+        <section className={`col-span-7 bg-white border rounded-lg flex flex-col h-full min-h-0 overflow-hidden ${
+          isLight ? 'border-slate-200 shadow-sm' : 'border-[#19191D]'
+        }`}>
           <div className="flex-grow w-full h-full bg-white relative overflow-hidden">
             <iframe 
               src={process.env.NEXT_PUBLIC_HELPDESK_CALENDAR_URL || "https://outlook.office365.com/owa/calendar/433a34896a4545739e21cff1bd39ac26@ucema.edu.ar/2d9d26876dd440a3a4d723c6fe0b29175286550549318340919/calendar.html"} 
@@ -631,7 +721,9 @@ export default function TvDashboardPage() {
       </div>
 
       {/* BOTTOM PANEL: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL) - 20% más bajo */}
-      <section className="relative z-10 bg-[#0e0e11] border border-[#19191D] rounded-lg p-3.5 flex flex-col h-[30%] min-h-[200px]">
+      <section className={`relative z-10 border rounded-lg p-3.5 flex flex-col h-[30%] min-h-[200px] transition-colors duration-300 ${
+        isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+      }`}>
 
         {/* 5-Column Almanac Grid */}
         <div className="grid grid-cols-5 gap-3 flex-grow overflow-hidden">
@@ -639,20 +731,33 @@ export default function TvDashboardPage() {
             const dayEvents = getEventsForDay(day);
 
             return (
-              <div key={day} className="bg-zinc-950 border border-[#19191D] rounded flex flex-col h-full overflow-hidden">
+              <div 
+                key={day} 
+                className={`border rounded flex flex-col h-full overflow-hidden transition-colors ${
+                  isLight ? 'bg-slate-50/80 border-slate-200' : 'bg-zinc-950 border-[#19191D]'
+                }`}
+              >
                 {/* Column header */}
-                <div className="bg-zinc-900 border-b border-[#19191D] py-2 px-3 flex justify-between items-center flex-shrink-0">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-200 font-mono">{day}</span>
-                  <span className="text-[9px] text-zinc-500 font-mono">0{day === 'Lunes' ? 1 : day === 'Martes' ? 2 : day === 'Miercoles' ? 3 : day === 'Jueves' ? 4 : 5}</span>
+                <div className={`border-b py-2 px-3 flex justify-between items-center flex-shrink-0 ${
+                  isLight ? 'bg-slate-100 border-slate-200' : 'bg-zinc-900 border-[#19191D]'
+                }`}>
+                  <span className={`text-[11px] font-bold uppercase tracking-wider font-mono ${
+                    isLight ? 'text-slate-800' : 'text-zinc-200'
+                  }`}>{day}</span>
+                  <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>
+                    0{day === 'Lunes' ? 1 : day === 'Martes' ? 2 : day === 'Miercoles' ? 3 : day === 'Jueves' ? 4 : 5}
+                  </span>
                 </div>
 
                 {/* Column Events body */}
                 {dayEvents.length === 0 ? (
-                  <div className="text-[10px] text-zinc-600 font-mono text-center py-6 uppercase tracking-wider flex-grow flex items-center justify-center">
+                  <div className={`text-[10px] font-mono text-center py-6 uppercase tracking-wider flex-grow flex items-center justify-center ${
+                    isLight ? 'text-slate-400' : 'text-zinc-600'
+                  }`}>
                     SIN EVENTOS
                   </div>
                 ) : (
-                  <DailyEventsList events={dayEvents} />
+                  <DailyEventsList events={dayEvents} isLight={isLight} />
                 )}
               </div>
             );
