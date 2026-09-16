@@ -83,6 +83,18 @@ export default function ManagementPage() {
     }
 
     checkAuth();
+
+    // Supabase Real-time subscriber to keep dashboard synced in real time
+    const channel = supabase
+      .channel('main-dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'directives' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'observations' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_events' }, () => fetchData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const determineRole = (email) => {
