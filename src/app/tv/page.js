@@ -5,66 +5,109 @@ import { supabase } from '@/lib/supabaseClient';
 import { Clock, ShieldAlert, Cpu, Activity, Database, Flame, Wifi, Layers, CalendarRange, Bell, X } from 'lucide-react';
 
 // --- HELPER COMPONENT: DailyEventsList with paused auto-scroll ---
-function DailyEventsList({ events, isLight }) {
+// --- HELPER COMPONENT: AutoScrollBox for TV lists and modals ---
+function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, pauseFrames = 120, staggerMs = 0 }) {
   const containerRef = useRef(null);
+  const isHoveredRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || events.length <= 4) {
-      if (container) container.scrollTop = 0;
-      return;
-    }
+    if (!container) return;
 
     let animId;
     let scrollTopVal = 0;
-    let state = 'PAUSE_TOP'; // PAUSE_TOP, SCROLLING, PAUSE_BOTTOM, RESETTING
+    let state = 'INIT';
     let timer = 0;
 
+    const startTimer = setTimeout(() => {
+      if (!container) return;
+      if (container.scrollHeight <= container.clientHeight + 4) {
+        container.scrollTop = 0;
+        return;
+      }
+      state = 'PAUSE_TOP';
+      timer = 0;
+      scrollTopVal = 0;
+      container.scrollTop = 0;
+      animId = requestAnimationFrame(loop);
+    }, 400 + staggerMs);
+
     function loop() {
+      if (!container) return;
+
+      if (isHoveredRef.current) {
+        animId = requestAnimationFrame(loop);
+        return;
+      }
+
+      if (container.scrollHeight <= container.clientHeight + 4) {
+        container.scrollTop = 0;
+        return;
+      }
+
       if (state === 'PAUSE_TOP') {
         timer += 1;
-        if (timer >= 180) { // 3 seconds at 60fps
+        if (timer >= pauseFrames) {
           state = 'SCROLLING';
           timer = 0;
         }
       } else if (state === 'SCROLLING') {
-        scrollTopVal += 0.35; // slow scroll speed
+        scrollTopVal += speed;
         container.scrollTop = scrollTopVal;
 
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 1) {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) {
           state = 'PAUSE_BOTTOM';
           timer = 0;
         }
       } else if (state === 'PAUSE_BOTTOM') {
         timer += 1;
-        if (timer >= 180) { // 3 seconds at 60fps
+        if (timer >= pauseFrames) {
           state = 'RESETTING';
           timer = 0;
         }
       } else if (state === 'RESETTING') {
-        scrollTopVal = 0;
-        container.scrollTop = 0;
-        state = 'PAUSE_TOP';
+        // Smooth return to top
+        scrollTopVal = Math.max(0, scrollTopVal - speed * 4);
+        container.scrollTop = scrollTopVal;
+
+        if (scrollTopVal <= 0) {
+          scrollTopVal = 0;
+          container.scrollTop = 0;
+          state = 'PAUSE_TOP';
+          timer = 0;
+        }
       }
 
       animId = requestAnimationFrame(loop);
     }
 
-    // Stagger the initial start slightly depending on day events to avoid synchronized scrolling
-    const startDelay = setTimeout(() => {
-      animId = requestAnimationFrame(loop);
-    }, Math.random() * 1000);
-
     return () => {
-      clearTimeout(startDelay);
-      cancelAnimationFrame(animId);
+      clearTimeout(startTimer);
+      if (animId) cancelAnimationFrame(animId);
     };
-  }, [events]);
+  }, dependencies);
 
   return (
     <div 
-      ref={containerRef}
+      ref={containerRef} 
+      className={className}
+      onMouseEnter={() => { isHoveredRef.current = true; }}
+      onMouseLeave={() => { isHoveredRef.current = false; }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// --- HELPER COMPONENT: DailyEventsList using AutoScrollBox ---
+function DailyEventsList({ events, isLight }) {
+  return (
+    <AutoScrollBox 
       className="flex-grow overflow-y-auto no-scrollbar p-2.5 space-y-2 h-full"
+      dependencies={[events]}
+      speed={0.35}
+      pauseFrames={120}
+      staggerMs={Math.random() * 800}
     >
       {events.map(evt => (
         <div 
@@ -88,7 +131,7 @@ function DailyEventsList({ events, isLight }) {
           )}
         </div>
       ))}
-    </div>
+    </AutoScrollBox>
   );
 }
 
@@ -619,7 +662,12 @@ export default function TvDashboardPage() {
                   <span className={`text-[11px] font-bold tracking-wide ${isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'}`}>HOY</span>
                 </div>
                 
-                <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
+                <AutoScrollBox 
+                  className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1"
+                  dependencies={[activeDirectivesHoy]}
+                  speed={0.35}
+                  pauseFrames={140}
+                >
                   {activeDirectivesHoy.length === 0 ? (
                     <div className={`h-full flex items-center justify-center text-[10px] font-mono text-center py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
                       SIN DIRECTIVAS ACTIVAS
@@ -654,7 +702,7 @@ export default function TvDashboardPage() {
                       </div>
                     ))
                   )}
-                </div>
+                </AutoScrollBox>
               </div>
 
               {/* MAÑANA Column */}
@@ -666,7 +714,13 @@ export default function TvDashboardPage() {
                   <span className={`text-[11px] font-bold tracking-wide ${isLight ? 'text-slate-700' : 'text-zinc-400'}`}>MAÑANA</span>
                 </div>
                 
-                <div className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1">
+                <AutoScrollBox 
+                  className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1"
+                  dependencies={[activeDirectivesManana]}
+                  speed={0.35}
+                  pauseFrames={140}
+                  staggerMs={400}
+                >
                   {activeDirectivesManana.length === 0 ? (
                     <div className={`h-full flex items-center justify-center text-[10px] font-mono text-center py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
                       SIN DIRECTIVAS ACTIVAS
@@ -701,7 +755,7 @@ export default function TvDashboardPage() {
                       </div>
                     ))
                   )}
-                </div>
+                </AutoScrollBox>
               </div>
 
             </div>
@@ -714,8 +768,13 @@ export default function TvDashboardPage() {
               <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>ESTADO GENERAL</span>
             </div>
 
-            {/* Chips / Cards Container - Ocupa todo el alto de su 50% */}
-            <div className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1">
+            {/* Chips / Cards Container - Ocupa todo el alto de su 50% con auto-scroll */}
+            <AutoScrollBox 
+              className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1"
+              dependencies={[observations]}
+              speed={0.3}
+              pauseFrames={150}
+            >
               {observations.length === 0 ? (
                 <div className={`h-full flex items-center justify-center text-[11px] font-mono gap-2 py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
                   <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-300' : 'bg-zinc-700'}`}></span>
@@ -748,7 +807,7 @@ export default function TvDashboardPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </AutoScrollBox>
           </div>
 
         </section>
@@ -856,8 +915,13 @@ export default function TvDashboardPage() {
               </button>
             </div>
 
-            {/* Listado de tareas próximas */}
-            <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto no-scrollbar">
+            {/* Listado de tareas próximas con AutoScroll */}
+            <AutoScrollBox 
+              className="p-6 space-y-4 max-h-[65vh] overflow-y-auto no-scrollbar"
+              dependencies={[upcomingAlertTasks]}
+              speed={0.45}
+              pauseFrames={120}
+            >
               {upcomingAlertTasks.map((task) => (
                 <div 
                   key={task.id}
@@ -896,7 +960,7 @@ export default function TvDashboardPage() {
                   </div>
                 </div>
               ))}
-            </div>
+            </AutoScrollBox>
 
             {/* Footer con cuenta regresiva de 50 segundos */}
             <div className="bg-zinc-950 border-t border-zinc-900 p-4 px-6 flex items-center justify-between">

@@ -7,6 +7,99 @@ import {
   Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle, Bell, Clock, X
 } from 'lucide-react';
 
+// --- HELPER COMPONENT: AutoScrollBox for long modal lists ---
+function AutoScrollBox({ children, className, dependencies = [], speed = 0.4, pauseFrames = 120 }) {
+  const containerRef = useRef(null);
+  const isHoveredRef = useRef(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let animId;
+    let scrollTopVal = 0;
+    let state = 'INIT';
+    let timer = 0;
+
+    const startTimer = setTimeout(() => {
+      if (!container) return;
+      if (container.scrollHeight <= container.clientHeight + 4) {
+        container.scrollTop = 0;
+        return;
+      }
+      state = 'PAUSE_TOP';
+      timer = 0;
+      scrollTopVal = 0;
+      container.scrollTop = 0;
+      animId = requestAnimationFrame(loop);
+    }, 400);
+
+    function loop() {
+      if (!container) return;
+
+      if (isHoveredRef.current) {
+        animId = requestAnimationFrame(loop);
+        return;
+      }
+
+      if (container.scrollHeight <= container.clientHeight + 4) {
+        container.scrollTop = 0;
+        return;
+      }
+
+      if (state === 'PAUSE_TOP') {
+        timer += 1;
+        if (timer >= pauseFrames) {
+          state = 'SCROLLING';
+          timer = 0;
+        }
+      } else if (state === 'SCROLLING') {
+        scrollTopVal += speed;
+        container.scrollTop = scrollTopVal;
+
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) {
+          state = 'PAUSE_BOTTOM';
+          timer = 0;
+        }
+      } else if (state === 'PAUSE_BOTTOM') {
+        timer += 1;
+        if (timer >= pauseFrames) {
+          state = 'RESETTING';
+          timer = 0;
+        }
+      } else if (state === 'RESETTING') {
+        scrollTopVal = Math.max(0, scrollTopVal - speed * 4);
+        container.scrollTop = scrollTopVal;
+
+        if (scrollTopVal <= 0) {
+          scrollTopVal = 0;
+          container.scrollTop = 0;
+          state = 'PAUSE_TOP';
+          timer = 0;
+        }
+      }
+
+      animId = requestAnimationFrame(loop);
+    }
+
+    return () => {
+      clearTimeout(startTimer);
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, dependencies);
+
+  return (
+    <div 
+      ref={containerRef} 
+      className={className}
+      onMouseEnter={() => { isHoveredRef.current = true; }}
+      onMouseLeave={() => { isHoveredRef.current = false; }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function ManagementPage() {
   const router = useRouter();
   
@@ -825,8 +918,13 @@ export default function ManagementPage() {
               </button>
             </div>
 
-            {/* Modal Content / Task List */}
-            <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto no-scrollbar">
+            {/* Modal Content / Task List with AutoScroll */}
+            <AutoScrollBox 
+              className="p-5 space-y-3 max-h-[60vh] overflow-y-auto no-scrollbar"
+              dependencies={[upcomingTasks]}
+              speed={0.4}
+              pauseFrames={120}
+            >
               {upcomingTasks.map((task) => (
                 <div 
                   key={task.id}
@@ -863,7 +961,7 @@ export default function ManagementPage() {
                   </div>
                 </div>
               ))}
-            </div>
+            </AutoScrollBox>
 
             {/* Modal Footer with 50s countdown bar */}
             <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 px-5 flex items-center justify-between">
