@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Clock, ShieldAlert, Cpu, Activity, Database, Flame, Wifi, Layers, CalendarRange } from 'lucide-react';
+import { Clock, ShieldAlert, Cpu, Activity, Database, Flame, Wifi, Layers, CalendarRange, Bell, X } from 'lucide-react';
 
 // --- HELPER COMPONENT: DailyEventsList with paused auto-scroll ---
 function DailyEventsList({ events }) {
@@ -64,14 +64,14 @@ function DailyEventsList({ events }) {
   return (
     <div 
       ref={containerRef}
-      className="flex-grow overflow-y-auto no-scrollbar p-2 space-y-1.5 h-full"
+      className="flex-grow overflow-y-auto no-scrollbar p-2.5 space-y-2 h-full"
     >
       {events.map(evt => (
-        <div key={evt.id} className="bg-zinc-900/80 border border-zinc-850 p-2 rounded flex flex-col gap-0.5 transition hover:border-zinc-700">
-          <span className="text-[8px] font-bold text-red-400 font-mono">{evt.time_range}</span>
-          <h4 className="text-[9.5px] font-bold text-zinc-100 truncate">{evt.title}</h4>
+        <div key={evt.id} className="bg-[#141418] border border-zinc-800 p-3 rounded-md flex flex-col gap-1 transition hover:border-zinc-700 shadow-sm">
+          <span className="text-xs font-bold text-red-400 font-mono tracking-wide">{evt.time_range}</span>
+          <h4 className="text-[13px] font-bold text-white leading-snug">{evt.title}</h4>
           {evt.description && (
-            <p className="text-[8.5px] text-zinc-500 line-clamp-2 leading-tight">{evt.description}</p>
+            <p className="text-xs text-zinc-400 line-clamp-2 leading-tight mt-0.5">{evt.description}</p>
           )}
         </div>
       ))}
@@ -236,14 +236,98 @@ export default function TvDashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 2. Latency timer oscillation
+  // Alert Modal states for upcoming tasks (<15 min)
+  const [upcomingAlertTasks, setUpcomingAlertTasks] = useState([]);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertCountdown, setAlertCountdown] = useState(50);
+  const alertedDirectivesRef = useRef(new Set());
+
+  // Play notification chime on TV
+  const playAlertChime = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } catch {}
+  };
+
+  // Check for upcoming directives (< 15 min away)
   useEffect(() => {
-    const latencyInterval = setInterval(() => {
-      const randomLat = Math.floor(Math.random() * 8) + 9;
-      setLatency(`${randomLat}ms`);
-    }, 4000);
-    return () => clearInterval(latencyInterval);
-  }, []);
+    const checkUpcoming = () => {
+      if (!directives || directives.length === 0) return;
+
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+      const currentDay = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${currentYear}-${currentMonth}-${currentDay}`;
+      const nowTotalMin = now.getHours() * 60 + now.getMinutes();
+
+      const due = [];
+      directives.forEach(dir => {
+        if (!dir.directive_date || dir.directive_date !== todayStr) return;
+        if (!dir.directive_time) return;
+
+        const parts = dir.directive_time.split(':');
+        if (parts.length < 2) return;
+        const targetH = parseInt(parts[0], 10);
+        const targetM = parseInt(parts[1], 10);
+        if (isNaN(targetH) || isNaN(targetM)) return;
+
+        const targetTotalMin = targetH * 60 + targetM;
+        const diffMin = targetTotalMin - nowTotalMin;
+
+        // Trigger if between -10 min and +15 min
+        if (diffMin >= -10 && diffMin <= 15) {
+          const key = `${dir.id}_${dir.directive_date}_${dir.directive_time}`;
+          if (!alertedDirectivesRef.current.has(key)) {
+            due.push({ ...dir, diffMinutes: diffMin });
+          }
+        }
+      });
+
+      if (due.length > 0) {
+        due.forEach(d => {
+          alertedDirectivesRef.current.add(`${d.id}_${d.directive_date}_${d.directive_time}`);
+        });
+        setUpcomingAlertTasks(due);
+        setShowAlertModal(true);
+        setAlertCountdown(50);
+        playAlertChime();
+      }
+    };
+
+    checkUpcoming();
+    const interval = setInterval(checkUpcoming, 10000);
+    return () => clearInterval(interval);
+  }, [directives]);
+
+  // 50-second auto-close countdown for TV
+  useEffect(() => {
+    if (!showAlertModal) return;
+
+    setAlertCountdown(50);
+    const interval = setInterval(() => {
+      setAlertCountdown(prev => {
+        if (prev <= 1) {
+          setShowAlertModal(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [showAlertModal]);
 
   // 3. Database fetch & Realtime subscription
   useEffect(() => {
@@ -366,6 +450,7 @@ export default function TvDashboardPage() {
         result.push({
           displayName: fixed ? fixed.displayName : dir.classroom.toUpperCase(),
           requirements: dir.requirements,
+          time: dir.directive_time,
           id: dir.id
         });
       }
@@ -437,7 +522,14 @@ export default function TvDashboardPage() {
                   ) : (
                     activeDirectivesHoy.map(item => (
                       <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
-                        <span className="text-red-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-red-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                          {item.time && (
+                            <span className="text-[10px] bg-red-950 border border-red-800 text-red-300 font-mono px-1.5 py-0.5 rounded flex items-center gap-1">
+                              <Clock size={10} /> {item.time} hs
+                            </span>
+                          )}
+                        </div>
                         <p className="text-zinc-200 text-xs font-medium leading-snug">{item.requirements}</p>
                       </div>
                     ))
@@ -460,7 +552,14 @@ export default function TvDashboardPage() {
                   ) : (
                     activeDirectivesManana.map(item => (
                       <div key={item.id} className="bg-[#141418] border border-zinc-850 p-2.5 rounded flex flex-col gap-1">
-                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-zinc-400 font-bold uppercase tracking-wider text-[11px] font-mono">{item.displayName}</span>
+                          {item.time && (
+                            <span className="text-[10px] bg-zinc-900 border border-zinc-700 text-zinc-300 font-mono px-1.5 py-0.5 rounded flex items-center gap-1">
+                              <Clock size={10} /> {item.time} hs
+                            </span>
+                          )}
+                        </div>
                         <p className="text-zinc-200 text-xs font-medium leading-snug">{item.requirements}</p>
                       </div>
                     ))
@@ -542,14 +641,14 @@ export default function TvDashboardPage() {
             return (
               <div key={day} className="bg-zinc-950 border border-[#19191D] rounded flex flex-col h-full overflow-hidden">
                 {/* Column header */}
-                <div className="bg-zinc-900 border-b border-[#19191D] py-1.5 px-3 flex justify-between items-center flex-shrink-0">
-                  <span className="text-[9px] font-black uppercase tracking-wider text-zinc-300 font-mono">{day}</span>
-                  <span className="text-[8px] text-zinc-600 font-mono">0{day === 'Lunes' ? 1 : day === 'Martes' ? 2 : day === 'Miercoles' ? 3 : day === 'Jueves' ? 4 : 5}</span>
+                <div className="bg-zinc-900 border-b border-[#19191D] py-2 px-3 flex justify-between items-center flex-shrink-0">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-200 font-mono">{day}</span>
+                  <span className="text-[9px] text-zinc-500 font-mono">0{day === 'Lunes' ? 1 : day === 'Martes' ? 2 : day === 'Miercoles' ? 3 : day === 'Jueves' ? 4 : 5}</span>
                 </div>
 
                 {/* Column Events body */}
                 {dayEvents.length === 0 ? (
-                  <div className="text-[8px] text-zinc-700 font-mono text-center py-6 uppercase tracking-wider flex-grow flex items-center justify-center">
+                  <div className="text-[10px] text-zinc-600 font-mono text-center py-6 uppercase tracking-wider flex-grow flex items-center justify-center">
                     SIN EVENTOS
                   </div>
                 ) : (
@@ -560,6 +659,93 @@ export default function TvDashboardPage() {
           })}
         </div>
       </section>
+
+      {/* MODAL EN PANTALLA DE TV: NOTIFICACIÓN DE TAREAS PRÓXIMAS (< 15 MIN) */}
+      {showAlertModal && upcomingAlertTasks.length > 0 && (
+        <div 
+          onClick={() => setShowAlertModal(false)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in duration-300"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0e0e11] border-2 border-red-600 rounded-2xl shadow-2xl shadow-red-950/80 max-w-2xl w-full overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200"
+          >
+            {/* Header con alarma */}
+            <div className="bg-red-950/60 border-b border-red-900/70 p-5 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-red-600 text-white rounded-xl shadow-lg shadow-red-600/40 animate-bounce">
+                  <Bell size={26} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-lg text-white tracking-wider flex items-center gap-3 font-mono">
+                    ALERTA: TAREA INMINENTE
+                    <span className="text-xs bg-red-600/40 text-red-200 border border-red-500/50 px-2.5 py-0.5 rounded font-mono">
+                      &lt; 15 MINUTOS
+                    </span>
+                  </h3>
+                  <p className="text-xs text-red-200/90 font-medium">Requerimiento técnico programado en breve para el equipo de soporte</p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setShowAlertModal(false)}
+                className="text-zinc-400 hover:text-white p-2 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
+                title="Cerrar modal"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* Listado de tareas próximas */}
+            <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto no-scrollbar">
+              {upcomingAlertTasks.map((task) => (
+                <div 
+                  key={task.id}
+                  className="bg-[#141418] border-2 border-red-900/50 p-5 rounded-xl flex flex-col gap-2.5 relative overflow-hidden shadow-md"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <span className="font-black text-red-400 font-mono text-base tracking-wider uppercase">
+                        {task.classroom}
+                      </span>
+                      <span className="text-xs font-mono font-bold bg-red-950 border border-red-800 text-red-200 px-2.5 py-1 rounded flex items-center gap-1.5">
+                        <Clock size={13} /> {task.directive_time} hs
+                      </span>
+                    </div>
+                    <span className="text-sm font-extrabold text-amber-400 font-mono bg-amber-950/40 border border-amber-900/60 px-3 py-0.5 rounded-full animate-pulse">
+                      {task.diffMinutes > 0 ? `Faltan ${task.diffMinutes} min` : task.diffMinutes === 0 ? '¡COMIENZA AHORA!' : 'En curso'}
+                    </span>
+                  </div>
+
+                  <p className="text-zinc-100 text-sm font-semibold leading-relaxed bg-zinc-950/80 p-3.5 rounded-lg border border-zinc-900">
+                    {task.requirements}
+                  </p>
+
+                  <div className="flex justify-between items-center text-[11px] text-zinc-500 font-mono pt-1">
+                    <span>Fecha: {task.directive_date}</span>
+                    <span>Registrado por: {task.created_by_email}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer con cuenta regresiva de 50 segundos */}
+            <div className="bg-zinc-950 border-t border-zinc-900 p-4 px-6 flex items-center justify-between">
+              <span className="text-xs text-zinc-400 font-mono flex items-center gap-2">
+                <Clock size={14} className="text-red-400" />
+                Cierre automático en <strong className="text-white font-bold">{alertCountdown}s</strong> (o haz clic afuera)
+              </span>
+
+              <button
+                onClick={() => setShowAlertModal(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold px-5 py-2 rounded-lg transition cursor-pointer font-mono"
+              >
+                Entendido / Salir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { 
-  Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle
+  Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle, Bell, Clock, X
 } from 'lucide-react';
 
 export default function ManagementPage() {
@@ -24,6 +24,7 @@ export default function ManagementPage() {
     const day = String(today.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   });
+  const [directiveTime, setDirectiveTime] = useState('');
   const [directiveReq, setDirectiveReq] = useState('');
 
   const [obsText, setObsText] = useState('');
@@ -38,6 +39,12 @@ export default function ManagementPage() {
   const [directivesList, setDirectivesList] = useState([]);
   const [observationsList, setObservationsList] = useState([]);
   const [eventsList, setEventsList] = useState([]);
+
+  // Alert Modal states for upcoming tasks (<15 min)
+  const [upcomingTasks, setUpcomingTasks] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [countdown, setCountdown] = useState(50);
+  const alertedIdsRef = useRef(new Set());
 
   // Check roles and user session
   useEffect(() => {
@@ -127,6 +134,93 @@ export default function ManagementPage() {
     };
   }, []);
 
+  // Play notification chime
+  const playAlertChime = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } catch {}
+  };
+
+  // Check for upcoming directives (< 15 min away)
+  useEffect(() => {
+    const checkUpcoming = () => {
+      if (!directivesList || directivesList.length === 0) return;
+
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+      const currentDay = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${currentYear}-${currentMonth}-${currentDay}`;
+      const nowTotalMin = now.getHours() * 60 + now.getMinutes();
+
+      const due = [];
+      directivesList.forEach(dir => {
+        if (!dir.directive_date || dir.directive_date !== todayStr) return;
+        if (!dir.directive_time) return;
+
+        const parts = dir.directive_time.split(':');
+        if (parts.length < 2) return;
+        const targetH = parseInt(parts[0], 10);
+        const targetM = parseInt(parts[1], 10);
+        if (isNaN(targetH) || isNaN(targetM)) return;
+
+        const targetTotalMin = targetH * 60 + targetM;
+        const diffMin = targetTotalMin - nowTotalMin;
+
+        // Trigger if between -10 min (ongoing) and +15 min (approaching)
+        if (diffMin >= -10 && diffMin <= 15) {
+          const key = `${dir.id}_${dir.directive_date}_${dir.directive_time}`;
+          if (!alertedIdsRef.current.has(key)) {
+            due.push({ ...dir, diffMinutes: diffMin });
+          }
+        }
+      });
+
+      if (due.length > 0) {
+        due.forEach(d => {
+          alertedIdsRef.current.add(`${d.id}_${d.directive_date}_${d.directive_time}`);
+        });
+        setUpcomingTasks(due);
+        setShowModal(true);
+        setCountdown(50);
+        playAlertChime();
+      }
+    };
+
+    checkUpcoming();
+    const interval = setInterval(checkUpcoming, 10000);
+    return () => clearInterval(interval);
+  }, [directivesList]);
+
+  // 50-second auto-close countdown
+  useEffect(() => {
+    if (!showModal) return;
+
+    setCountdown(50);
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          setShowModal(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [showModal]);
+
   const determineRole = (email) => {
     if (email === 'sanchezmanuel397@gmail.com') {
       setUserRole('super_admin');
@@ -181,8 +275,8 @@ export default function ManagementPage() {
       setObservationsList(JSON.parse(localObs));
     } else {
       const defaultObs = [
-        { id: '1', text: 'Corte de fibra en bloque oeste.', severity: 'danger', created_by_email: 'sanchezmanuel397@gmail.com' },
-        { id: '2', text: 'Access Point AP-09 reporta sobrecarga.', severity: 'warning', created_by_email: 'ajgarcia@ucema.edu.ar' }
+        { id: '1', text: 'Impresora Piso 3 sin tóner negro.', severity: 'warning', created_by_email: 'support@ucema.edu.ar' },
+        { id: '2', text: 'Red Wi-Fi Edificio Central operando con normalidad.', severity: 'info', created_by_email: 'sanchezmanuel397@gmail.com' }
       ];
       localStorage.setItem('demo_observations', JSON.stringify(defaultObs));
       setObservationsList(defaultObs);
@@ -194,8 +288,9 @@ export default function ManagementPage() {
       setEventsList(JSON.parse(localEvts));
     } else {
       const defaultEvts = [
-        { id: '1', day_of_week: 'Lunes', title: 'Auditorio - Setup', description: 'Micrófonos y consola', time_range: '08:00 - 09:30', created_by_email: 'ajgarcia@ucema.edu.ar' },
-        { id: '2', day_of_week: 'Miércoles', title: '4E - Mantenimiento', description: 'Fijación de proyector', time_range: '10:00 - 12:00', created_by_email: 'support@ucema.edu.ar' }
+        { id: '1', day_of_week: 'Lunes', title: 'Backup General Servidores', description: 'Revisión periódica de cintas y almacenamiento NAS.', time_range: '08:00 - 10:00', created_by_email: 'sanchezmanuel397@gmail.com' },
+        { id: '2', day_of_week: 'Miércoles', title: 'Guardia Soporte Auditorio', description: 'Conferencia ejecutiva con microfonía inalámbrica.', time_range: '14:00 - 18:00', created_by_email: 'ajgarcia@ucema.edu.ar' },
+        { id: '3', day_of_week: 'Viernes', title: 'Reinicio Programado de Switches', description: 'Ventana de mantenimiento en piso 4 y 5.', time_range: '20:00 - 21:00', created_by_email: 'sanchezmanuel397@gmail.com' }
       ];
       localStorage.setItem('demo_events', JSON.stringify(defaultEvts));
       setEventsList(defaultEvts);
@@ -215,6 +310,7 @@ export default function ManagementPage() {
     const newItem = {
       classroom: directiveClassroom,
       directive_date: directiveDate,
+      directive_time: directiveTime || null,
       requirements: directiveReq,
       created_by_email: userEmail || 'anonymous@ucema.edu.ar',
     };
@@ -230,6 +326,7 @@ export default function ManagementPage() {
       setDirectivesList(localData);
     }
     setDirectiveReq('');
+    setDirectiveTime('');
   };
 
   const addObservation = async (e) => {
@@ -388,15 +485,26 @@ export default function ManagementPage() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Fecha de aplicación</label>
-              <input
-                type="date"
-                value={directiveDate}
-                onChange={(e) => setDirectiveDate(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                required
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Fecha de aplicación</label>
+                <input
+                  type="date"
+                  value={directiveDate}
+                  onChange={(e) => setDirectiveDate(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">Horario (Opcional)</label>
+                <input
+                  type="time"
+                  value={directiveTime}
+                  onChange={(e) => setDirectiveTime(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                />
+              </div>
             </div>
 
             <div>
@@ -427,7 +535,7 @@ export default function ManagementPage() {
               directivesList.map(dir => (
                 <div key={dir.id} className="bg-zinc-950 border border-zinc-850 p-2.5 rounded text-xs relative">
                   <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-red-400 font-mono">{dir.classroom} ({dir.directive_date})</span>
+                    <span className="font-bold text-red-400 font-mono">{dir.classroom} ({dir.directive_date}{dir.directive_time ? ` · ${dir.directive_time} hs` : ''})</span>
                     <button onClick={() => deleteItem('directives', dir.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
                       <Trash2 size={12} />
                     </button>
@@ -610,6 +718,92 @@ export default function ManagementPage() {
         </section>
 
       </main>
+
+      {/* MODAL: NOTIFICACIÓN DE DIRECTIVAS PRÓXIMAS (< 15 MIN) */}
+      {showModal && upcomingTasks.length > 0 && (
+        <div 
+          onClick={() => setShowModal(false)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0e0e11] border-2 border-red-600 rounded-xl shadow-2xl shadow-red-950/50 max-w-lg w-full overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200"
+          >
+            {/* Modal Header */}
+            <div className="bg-red-950/50 border-b border-red-900/60 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-red-600 text-white rounded-lg animate-bounce">
+                  <Bell size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white tracking-wider flex items-center gap-2 font-mono">
+                    ALERTA: TAREAS PRÓXIMAS
+                    <span className="text-[10px] bg-red-600/40 text-red-200 border border-red-500/50 px-2 py-0.5 rounded font-mono">
+                      &lt; 15 MIN
+                    </span>
+                  </h3>
+                  <p className="text-xs text-red-200/80">Requerimientos técnicos prioritarios a preparar</p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setShowModal(false)}
+                className="text-zinc-400 hover:text-white p-1.5 rounded-md hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Content / Task List */}
+            <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto no-scrollbar">
+              {upcomingTasks.map((task) => (
+                <div 
+                  key={task.id}
+                  className="bg-[#141418] border border-red-900/40 p-4 rounded-lg flex flex-col gap-2 relative overflow-hidden"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-red-400 font-mono text-sm tracking-wide">
+                        {task.classroom}
+                      </span>
+                      <span className="text-[11px] font-mono bg-red-950 border border-red-800 text-red-300 px-2 py-0.5 rounded flex items-center gap-1">
+                        <Clock size={12} /> {task.directive_time} hs
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-amber-400 font-mono">
+                      {task.diffMinutes > 0 ? `Faltan ${task.diffMinutes} min` : task.diffMinutes === 0 ? '¡COMIENZA AHORA!' : 'En curso'}
+                    </span>
+                  </div>
+
+                  <p className="text-zinc-100 text-xs font-medium leading-relaxed bg-zinc-950/70 p-3 rounded border border-zinc-900">
+                    {task.requirements}
+                  </p>
+
+                  <div className="flex justify-between items-center text-[10px] text-zinc-500 font-mono pt-1">
+                    <span>Fecha: {task.directive_date}</span>
+                    <span>Asignó: {task.created_by_email}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Modal Footer with 50s countdown bar */}
+            <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 px-5 flex items-center justify-between">
+              <span className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5">
+                <Clock size={13} className="text-red-400" />
+                Cierre automático en <strong className="text-white font-bold">{countdown}s</strong> (o haz clic afuera)
+              </span>
+
+              <button
+                onClick={() => setShowModal(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-4 py-1.5 rounded transition cursor-pointer font-mono"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

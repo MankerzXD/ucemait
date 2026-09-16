@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS public.directives (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     classroom TEXT CHECK (classroom IN ('4D', '4E', '5E', 'Lab Movil 1', 'Lab Movil 2', 'Lab Movil 3')) NOT NULL,
     directive_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    directive_time TEXT,
     requirements TEXT NOT NULL,
     created_by_email TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
