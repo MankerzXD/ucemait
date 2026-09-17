@@ -4,31 +4,87 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Clock, ShieldAlert, Cpu, Activity, Database, Flame, Wifi, Layers, CalendarRange, Bell, X } from 'lucide-react';
 
-// --- HELPER COMPONENT: DailyEventsList with paused auto-scroll ---
+// --- HELPER COMPONENT: Realtime Header Clock (isolated to avoid re-rendering entire dashboard) ---
+function HeaderClock({ isLight }) {
+  const [timeStr, setTimeStr] = useState('');
+  const [dateStr, setDateStr] = useState('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      setTimeStr(`${hours}:${minutes}:${seconds}`);
+
+      const day = String(now.getDate()).padStart(2, '0');
+      const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+      const month = months[now.getMonth()];
+      const year = now.getFullYear();
+      setDateStr(`${day} ${month} ${year}`);
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-3 text-right">
+      <span className={`text-xs font-medium ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>{dateStr}</span>
+      <span className={isLight ? 'text-slate-300' : 'text-zinc-700'}>|</span>
+      <span className={`text-sm tracking-wider ${isLight ? 'text-slate-900 font-bold' : 'text-white font-semibold'}`}>{timeStr}</span>
+    </div>
+  );
+}
+
 // --- HELPER COMPONENT: AutoScrollBox for TV lists and modals ---
-function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, pauseFrames = 120, staggerMs = 0 }) {
+function AutoScrollBox({ 
+  children, 
+  className, 
+  dependencies = [], 
+  speed = 0.35, 
+  pauseFrames = 120, 
+  pauseDuration = null, 
+  staggerMs = 0 
+}) {
   const containerRef = useRef(null);
   const isHoveredRef = useRef(false);
+
+  // Stringify dependencies to avoid infinite re-trigger loops from array recreation
+  const depsKey = JSON.stringify(dependencies);
+
+  // Speed in pixels per second: if speed < 5, treat as pixels per frame at 60fps
+  const speedPxPerSec = speed < 5 ? speed * 60 : speed;
+  const pauseTimeSec = pauseDuration !== null ? pauseDuration : (pauseFrames / 60);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     let animId;
-    let scrollTopVal = 0;
+    let scrollTopVal = container.scrollTop;
     let state = 'PAUSE_TOP';
-    let timer = 0;
+    let pauseTimer = 0;
+    let lastTime = null;
 
     const startTimer = setTimeout(() => {
       if (!container) return;
       state = 'PAUSE_TOP';
-      timer = 0;
+      pauseTimer = 0;
       scrollTopVal = container.scrollTop;
+      lastTime = performance.now();
       animId = requestAnimationFrame(loop);
     }, 400 + staggerMs);
 
-    function loop() {
+    function loop(currentTime) {
       if (!container) return;
+
+      if (lastTime === null) {
+        lastTime = currentTime;
+      }
+      const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+      lastTime = currentTime;
 
       if (isHoveredRef.current) {
         scrollTopVal = container.scrollTop;
@@ -36,7 +92,10 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
         return;
       }
 
-      if (container.scrollHeight <= container.clientHeight + 4) {
+      const maxScroll = container.scrollHeight - container.clientHeight;
+
+      // If content fits without scrolling, keep reset at top
+      if (maxScroll <= 4) {
         if (container.scrollTop !== 0) {
           container.scrollTop = 0;
           scrollTopVal = 0;
@@ -46,36 +105,35 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
       }
 
       if (state === 'PAUSE_TOP') {
-        timer += 1;
-        if (timer >= pauseFrames) {
+        pauseTimer += dt;
+        if (pauseTimer >= pauseTimeSec) {
           state = 'SCROLLING';
-          timer = 0;
+          pauseTimer = 0;
         }
       } else if (state === 'SCROLLING') {
-        scrollTopVal += speed;
+        scrollTopVal += speedPxPerSec * dt;
         container.scrollTop = scrollTopVal;
 
-        const maxScroll = container.scrollHeight - container.clientHeight;
-        if (container.scrollTop >= maxScroll - 2) {
+        if (container.scrollTop >= maxScroll - 1 || scrollTopVal >= maxScroll) {
           state = 'PAUSE_BOTTOM';
-          timer = 0;
+          pauseTimer = 0;
         }
       } else if (state === 'PAUSE_BOTTOM') {
-        timer += 1;
-        if (timer >= pauseFrames) {
+        pauseTimer += dt;
+        if (pauseTimer >= pauseTimeSec) {
           state = 'RESETTING';
-          timer = 0;
+          pauseTimer = 0;
         }
       } else if (state === 'RESETTING') {
-        // Smooth return to top
-        scrollTopVal = Math.max(0, container.scrollTop - speed * 4);
+        // Smooth return to top at ~4x speed
+        scrollTopVal = Math.max(0, container.scrollTop - (speedPxPerSec * 4) * dt);
         container.scrollTop = scrollTopVal;
 
-        if (scrollTopVal <= 0) {
+        if (scrollTopVal <= 0 || container.scrollTop <= 0) {
           scrollTopVal = 0;
           container.scrollTop = 0;
           state = 'PAUSE_TOP';
-          timer = 0;
+          pauseTimer = 0;
         }
       }
 
@@ -86,7 +144,7 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
       clearTimeout(startTimer);
       if (animId) cancelAnimationFrame(animId);
     };
-  }, dependencies);
+  }, [depsKey, speedPxPerSec, pauseTimeSec, staggerMs]);
 
   return (
     <div 
@@ -263,39 +321,10 @@ export default function TvDashboardPage() {
   const [tvTheme, setTvTheme] = useState('dark');
   const isLight = tvTheme === 'light' || tvTheme === 'white';
 
-  // Clock state
-  const [timeStr, setTimeStr] = useState('19:57:42');
-  const [dateStr, setDateStr] = useState('27 MAY 2026');
-  const [latency, setLatency] = useState('12ms');
-
   // Database lists
   const [directives, setDirectives] = useState([]);
   const [observations, setObservations] = useState([]);
   const [events, setEvents] = useState([]);
-
-  // 1. Clock timer
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      setTimeStr(`${hours}:${minutes}:${seconds}`);
-
-      const day = String(now.getDate()).padStart(2, '0');
-      const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-      const month = months[now.getMonth()];
-      const year = now.getFullYear();
-      
-      // Capitalized date
-      setDateStr(`${day} ${month} ${year}`);
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Alert Modal states for upcoming tasks (<15 min)
   const [upcomingAlertTasks, setUpcomingAlertTasks] = useState([]);
@@ -628,11 +657,7 @@ export default function TvDashboardPage() {
         <div></div>
 
         <div className="flex justify-end items-center gap-4">
-          <div className="flex items-center gap-3 text-right">
-            <span className={`text-xs font-medium ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>{dateStr}</span>
-            <span className={isLight ? 'text-slate-300' : 'text-zinc-700'}>|</span>
-            <span className={`text-sm tracking-wider ${isLight ? 'text-slate-900 font-bold' : 'text-white font-semibold'}`}>{timeStr}</span>
-          </div>
+          <HeaderClock isLight={isLight} />
         </div>
       </header>
 
