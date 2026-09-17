@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { analyzeTicketWithGemini } from '@/lib/geminiParser';
 
 const DEFAULT_CALENDAR_URL = 'https://outlook.office365.com/owa/calendar/433a34896a4545739e21cff1bd39ac26@ucema.edu.ar/2d9d26876dd440a3a4d723c6fe0b29175286550549318340919/calendar.ics';
 
@@ -156,14 +157,39 @@ export async function GET() {
       daysWithEvents[e.day].push(e);
     });
 
+    // Enrich today & tomorrow events with AI / Smart ticket analysis
+    const enrichedTodayEvents = await Promise.all(
+      todayEvents.map(async (e) => {
+        const aiAnalysis = await analyzeTicketWithGemini({
+          id: e.id,
+          title: e.title,
+          timeStr: e.timeStr,
+          description: e.description
+        });
+        return { ...e, aiAnalysis };
+      })
+    );
+
+    const enrichedTomorrowEvents = await Promise.all(
+      tomorrowEvents.map(async (e) => {
+        const aiAnalysis = await analyzeTicketWithGemini({
+          id: e.id,
+          title: e.title,
+          timeStr: e.timeStr,
+          description: e.description
+        });
+        return { ...e, aiAnalysis };
+      })
+    );
+
     cachedData = {
       todayStr,
       tomorrowStr,
       currentYear,
       currentMonth,
       totalEvents: allEvents.length,
-      todayEvents,
-      tomorrowEvents,
+      todayEvents: enrichedTodayEvents,
+      tomorrowEvents: enrichedTomorrowEvents,
       monthEvents,
       daysWithEvents,
       lastFetched: new Date().toISOString()

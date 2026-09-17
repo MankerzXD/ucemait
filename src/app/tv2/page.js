@@ -1005,20 +1005,38 @@ export default function Tv2DashboardPage() {
                 calendarData.todayEvents.map(evt => (
                   <div 
                     key={evt.id}
-                    className={`p-3 rounded-md border flex flex-col gap-1.5 transition shadow-xs ${
+                    className={`p-3 rounded-md border flex flex-col gap-2 transition shadow-xs ${
                       isLight 
                         ? 'bg-slate-50/90 border-slate-200 hover:border-[#940028]/50 text-slate-800' 
                         : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white'
                     }`}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className={`text-xs font-extrabold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                        isLight 
-                          ? 'bg-[#940028] text-white shadow-2xs' 
-                          : 'bg-[#940028] text-white shadow-2xs'
-                      }`}>
-                        <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
-                      </span>
+                    {/* Time Badges */}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
+                          <>
+                            <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                              isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
+                            }`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                              EVENTO: {evt.aiAnalysis.event_real_time}
+                            </span>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                              isLight ? 'bg-slate-200 text-slate-700' : 'bg-zinc-850 text-zinc-400'
+                            }`}>
+                              <Clock size={10} /> Armado: {evt.timeStr} hs
+                            </span>
+                          </>
+                        ) : (
+                          <span className={`text-xs font-extrabold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                            isLight ? 'bg-[#940028] text-white shadow-2xs' : 'bg-[#940028] text-white shadow-2xs'
+                          }`}>
+                            <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
+                          </span>
+                        )}
+                      </div>
+
                       {evt.location && (
                         <span className={`text-[9px] font-mono truncate max-w-[120px] flex items-center gap-0.5 ${
                           isLight ? 'text-slate-600' : 'text-zinc-400'
@@ -1028,9 +1046,35 @@ export default function Tv2DashboardPage() {
                       )}
                     </div>
 
+                    {/* Discrepancy Note if present */}
+                    {evt.aiAnalysis?.has_discrepancy && (
+                      <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
+                        isLight ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
+                      }`}>
+                        <AlertCircle size={11} className="flex-shrink-0 text-amber-500" />
+                        <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
+                      </div>
+                    )}
+
                     <h4 className={`text-xs font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
                       {evt.title}
                     </h4>
+
+                    {/* Equipment tags if extracted */}
+                    {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
+                          <span 
+                            key={tagIdx}
+                            className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
+                              isLight ? 'bg-white text-slate-700 border-slate-200 shadow-2xs' : 'bg-zinc-900 text-zinc-300 border-zinc-800'
+                            }`}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {evt.description && (
                       <p className={`text-[11px] line-clamp-2 leading-tight ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
@@ -1083,20 +1127,40 @@ export default function Tv2DashboardPage() {
                 calendarData.tomorrowEvents.map(evt => (
                   <div 
                     key={evt.id}
-                    className={`p-3 rounded-md border flex flex-col gap-1.5 transition shadow-xs ${
+                    className={`p-3 rounded-md border flex flex-col gap-2 transition shadow-xs ${
                       isLight 
                         ? 'bg-slate-50/90 border-slate-200 text-slate-800' 
                         : 'bg-[#141418] border-zinc-800 text-white'
                     }`}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                        isLight 
-                          ? 'bg-slate-200 text-slate-800 border border-slate-300' 
-                          : 'bg-zinc-850 text-zinc-200 border border-zinc-700'
-                      }`}>
-                        <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
-                      </span>
+                    {/* Time Badges */}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
+                          <>
+                            <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                              isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
+                            }`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                              EVENTO: {evt.aiAnalysis.event_real_time}
+                            </span>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                              isLight ? 'bg-slate-200 text-slate-700' : 'bg-zinc-850 text-zinc-400'
+                            }`}>
+                              <Clock size={10} /> Armado: {evt.timeStr} hs
+                            </span>
+                          </>
+                        ) : (
+                          <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                            isLight 
+                              ? 'bg-slate-200 text-slate-800 border border-slate-300' 
+                              : 'bg-zinc-850 text-zinc-200 border border-zinc-700'
+                          }`}>
+                            <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
+                          </span>
+                        )}
+                      </div>
+
                       {evt.location && (
                         <span className={`text-[9px] font-mono truncate max-w-[120px] flex items-center gap-0.5 ${
                           isLight ? 'text-slate-600' : 'text-zinc-400'
@@ -1106,9 +1170,35 @@ export default function Tv2DashboardPage() {
                       )}
                     </div>
 
+                    {/* Discrepancy Note if present */}
+                    {evt.aiAnalysis?.has_discrepancy && (
+                      <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
+                        isLight ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
+                      }`}>
+                        <AlertCircle size={11} className="flex-shrink-0 text-amber-500" />
+                        <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
+                      </div>
+                    )}
+
                     <h4 className={`text-xs font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
                       {evt.title}
                     </h4>
+
+                    {/* Equipment tags */}
+                    {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
+                          <span 
+                            key={tagIdx}
+                            className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
+                              isLight ? 'bg-white text-slate-700 border-slate-200 shadow-2xs' : 'bg-zinc-900 text-zinc-300 border-zinc-800'
+                            }`}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {evt.description && (
                       <p className={`text-[11px] line-clamp-2 leading-tight ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
