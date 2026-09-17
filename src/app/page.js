@@ -601,9 +601,16 @@ export default function ManagementPage() {
 
           <button
             onClick={() => router.push('/tv')}
-            className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded font-mono flex items-center gap-1.5 cursor-pointer flex-grow md:flex-grow-0 justify-center"
+            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs px-3 py-1.5 rounded font-mono flex items-center gap-1.5 cursor-pointer flex-grow md:flex-grow-0 justify-center border border-zinc-700"
           >
-            <Tv size={14} /> VER TV DASHBOARD
+            <Tv size={14} /> TV 1 (CLÁSICO)
+          </button>
+
+          <button
+            onClick={() => router.push('/tv2')}
+            className="bg-[#940028] hover:bg-[#b30032] text-white text-xs px-3 py-1.5 rounded font-mono flex items-center gap-1.5 cursor-pointer flex-grow md:flex-grow-0 justify-center font-bold shadow-xs"
+          >
+            <Tv size={14} /> TV 2 (NATIVO)
           </button>
 
           <button
