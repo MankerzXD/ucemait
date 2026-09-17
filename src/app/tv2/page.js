@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Clock, ShieldAlert, Activity, Bell, X, Calendar as CalendarIcon, MapPin, Ticket, AlertCircle } from 'lucide-react';
+import { 
+  Clock, ShieldAlert, Activity, Bell, X, Calendar as CalendarIcon, MapPin, 
+  Ticket, AlertCircle, ChevronRight, CheckCircle2, FileText, Layers
+} from 'lucide-react';
 
 // --- HELPER COMPONENT: Realtime Header Clock (isolated to avoid re-rendering entire dashboard) ---
 function HeaderClock({ isLight }) {
@@ -30,10 +33,10 @@ function HeaderClock({ isLight }) {
   }, []);
 
   return (
-    <div className="flex items-center gap-3 text-right">
-      <span className={`text-xs font-medium ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>{dateStr}</span>
+    <div className="flex items-center gap-2 sm:gap-3 text-right">
+      <span className={`text-[11px] sm:text-xs font-medium ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>{dateStr}</span>
       <span className={isLight ? 'text-slate-300' : 'text-zinc-700'}>|</span>
-      <span className={`text-sm tracking-wider ${isLight ? 'text-slate-900 font-bold' : 'text-white font-semibold'}`}>{timeStr}</span>
+      <span className={`text-xs sm:text-sm tracking-wider font-mono ${isLight ? 'text-slate-900 font-bold' : 'text-white font-semibold'}`}>{timeStr}</span>
     </div>
   );
 }
@@ -147,6 +150,8 @@ function AutoScrollBox({
       className={className}
       onMouseEnter={() => { isHoveredRef.current = true; }}
       onMouseLeave={() => { isHoveredRef.current = false; }}
+      onTouchStart={() => { isHoveredRef.current = true; }}
+      onTouchEnd={() => { isHoveredRef.current = false; }}
     >
       {children}
     </div>
@@ -220,6 +225,15 @@ export default function Tv2DashboardPage() {
     currentYear: 2026,
     currentMonth: 9
   });
+
+  // Mobile Single Day view state (defaults to today's day of week, e.g. 'Jueves')
+  const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  const todayDayIdx = new Date().getDay();
+  const currentDayName = (todayDayIdx >= 1 && todayDayIdx <= 5) ? DAY_NAMES[todayDayIdx] : 'Lunes';
+  const [selectedMobileDay, setSelectedMobileDay] = useState(currentDayName);
+
+  // Interactive Ticket Detail Modal state (for Mobile and Desktop)
+  const [selectedTicketModal, setSelectedTicketModal] = useState(null);
 
   // Alert Modal states for upcoming tasks (<15 min)
   const [upcomingAlertTasks, setUpcomingAlertTasks] = useState([]);
@@ -591,11 +605,9 @@ export default function Tv2DashboardPage() {
     const lastDay = new Date(year, month, 0);
     const totalDays = lastDay.getDate();
 
-    // Monday-first index: 0 = Lunes, 6 = Domingo
     const startDayOfWeek = (firstDay.getDay() + 6) % 7;
 
     const cells = [];
-    // Previous month filler
     const prevMonthLastDay = new Date(year, month - 1, 0).getDate();
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
       cells.push({
@@ -606,7 +618,6 @@ export default function Tv2DashboardPage() {
       });
     }
 
-    // Current month days
     const currentDayNumber = new Date().getDate();
     for (let d = 1; d <= totalDays; d++) {
       const isToday = d === currentDayNumber;
@@ -619,7 +630,6 @@ export default function Tv2DashboardPage() {
       });
     }
 
-    // Trailing cells to fill the 7-column grid
     const remaining = (7 - (cells.length % 7)) % 7;
     for (let i = 1; i <= remaining; i++) {
       cells.push({
@@ -649,47 +659,238 @@ export default function Tv2DashboardPage() {
     return `${day} ${months[tom.getMonth()]}`;
   }, []);
 
+  // Card component renderer for Outlook events (reused in desktop and mobile)
+  const renderEventCard = (evt) => (
+    <div 
+      key={evt.id}
+      onClick={() => setSelectedTicketModal(evt)}
+      className={`p-3.5 rounded-lg border flex flex-col gap-2.5 transition shadow-xs cursor-pointer active:scale-[0.99] group ${
+        isLight 
+          ? 'bg-white border-slate-200 hover:border-[#940028]/60 text-slate-800 hover:shadow-md' 
+          : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white hover:bg-zinc-900/60'
+      }`}
+    >
+      {/* Time Badges & Location */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
+            <>
+              <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                EVENTO: {evt.aiAnalysis.event_real_time}
+              </span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                isLight ? 'bg-slate-100 text-slate-600' : 'bg-zinc-850 text-zinc-400'
+              }`}>
+                <Clock size={10} /> Armado: {evt.timeStr} hs
+              </span>
+            </>
+          ) : (
+            <span className={`text-xs font-extrabold font-mono px-2.5 py-0.5 rounded flex items-center gap-1 ${
+              isLight ? 'bg-[#940028] text-white shadow-2xs' : 'bg-[#940028] text-white shadow-2xs'
+            }`}>
+              <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
+            </span>
+          )}
+        </div>
+
+        {evt.location && (
+          <span className={`text-[9px] font-mono truncate max-w-[130px] flex items-center gap-0.5 ${
+            isLight ? 'text-slate-500' : 'text-zinc-400'
+          }`}>
+            <MapPin size={10} /> {evt.location}
+          </span>
+        )}
+      </div>
+
+      {/* Discrepancy Note if present */}
+      {evt.aiAnalysis?.has_discrepancy && (
+        <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
+          isLight ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
+        }`}>
+          <AlertCircle size={12} className="flex-shrink-0 text-amber-500" />
+          <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
+        </div>
+      )}
+
+      {/* Title */}
+      <h4 className={`text-xs sm:text-[13px] font-bold leading-snug group-hover:text-[#940028] transition-colors ${
+        isLight ? 'text-slate-900' : 'text-white'
+      }`}>
+        {evt.title}
+      </h4>
+
+      {/* Equipment tags */}
+      {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
+            <span 
+              key={tagIdx}
+              className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
+                isLight ? 'bg-slate-50 text-slate-700 border-slate-200' : 'bg-zinc-900 text-zinc-300 border-zinc-800'
+              }`}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Description Snippet */}
+      {evt.description && (
+        <p className={`text-[11px] line-clamp-2 leading-tight ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+          {evt.description}
+        </p>
+      )}
+
+      {/* Tap hint for mobile & desktop */}
+      <div className={`pt-1 border-t border-dashed flex items-center justify-between text-[10px] font-mono ${
+        isLight ? 'border-slate-200 text-slate-500' : 'border-zinc-800 text-zinc-500'
+      }`}>
+        <span className="text-[#940028] font-bold group-hover:underline flex items-center gap-0.5">
+          Ver requerimientos completos <ChevronRight size={11} />
+        </span>
+        <span className="text-[9px] opacity-70">Tocar para abrir</span>
+      </div>
+    </div>
+  );
+
   return (
-    <main className={`relative h-screen w-screen flex flex-col p-6 gap-5 overflow-hidden select-none transition-colors duration-500 ${isLight ? 'bg-[#f1f5f9] text-slate-900' : 'bg-[#09090b] text-zinc-100'}`}>
+    <main className={`relative min-h-screen md:h-screen w-screen flex flex-col p-3.5 sm:p-4 md:p-6 gap-3.5 sm:gap-4 md:gap-5 overflow-y-auto md:overflow-hidden select-none transition-colors duration-500 ${isLight ? 'bg-[#f1f5f9] text-slate-900' : 'bg-[#09090b] text-zinc-100'}`}>
 
       {/* HEADER */}
-      <header className={`relative z-10 grid grid-cols-3 items-center border-b px-6 py-4 rounded-lg shadow-sm transition-colors duration-300 ${
+      <header className={`relative z-10 flex items-center justify-between border-b px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-sm transition-colors duration-300 ${
         isLight 
           ? 'bg-white border-[#940028]/30 shadow-[#940028]/5' 
           : 'bg-[#0e0e11] border-[#940028]/40 shadow-[#940028]/10'
       }`}>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <img 
             src="/ucema-logo.png" 
             alt="UCEMA Logo" 
-            className="h-9 w-auto rounded object-contain shadow-xs" 
+            className="h-7 sm:h-9 w-auto rounded object-contain shadow-xs" 
             onError={(e) => {
               e.currentTarget.src = "https://ucema.edu.ar/mailing/firmas-ucema/Firmas_Institucional/Firma_Institucional_Blanco/assets/img/LOGO.png";
             }}
           />
-          <div className={`border-l pl-3 ${isLight ? 'border-slate-300' : 'border-[#19191D]'}`}>
-            <div className="flex items-center gap-2">
-              <h1 className={`font-bold text-sm tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>DASHBOARD UCEMA</h1>
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#940028] text-white font-bold tracking-widest uppercase">
+          <div className={`border-l pl-2.5 sm:pl-3 ${isLight ? 'border-slate-300' : 'border-[#19191D]'}`}>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <h1 className={`font-bold text-xs sm:text-sm tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>DASHBOARD UCEMA</h1>
+              <span className="text-[8px] sm:text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#940028] text-white font-bold tracking-widest uppercase">
                 TV 2
               </span>
             </div>
-            <p className={`text-[10px] ${isLight ? 'text-[#940028] font-bold' : 'text-zinc-400'}`}>Soporte Técnico</p>
+            <p className={`text-[9px] sm:text-[10px] ${isLight ? 'text-[#940028] font-bold' : 'text-zinc-400'}`}>Soporte Técnico</p>
           </div>
         </div>
 
-        <div></div>
-
-        <div className="flex justify-end items-center gap-4">
+        <div className="flex justify-end items-center">
           <HeaderClock isLight={isLight} />
         </div>
       </header>
 
-      {/* TOP PANELS: 3-COLUMN REORGANIZATION (DIRECTIVAS/OBSERVACIONES 35% | MES CENTRAL 42% | HOY+MAÑANA 23%) */}
-      <div className="relative z-10 grid grid-cols-12 gap-4 flex-grow h-0 min-h-0">
+      {/* MAIN LAYOUT: MOBILE-FIRST FLEX ORDER VS DESKTOP 12-COLUMN GRID */}
+      <div className="relative z-10 flex flex-col md:grid md:grid-cols-12 gap-3.5 sm:gap-4 md:flex-grow md:h-0 md:min-h-0">
         
-        {/* LEFT COLUMN (COL-SPAN-4): DIRECTIVAS (50%) + OBSERVACIONES (50%) */}
-        <section className={`col-span-4 border rounded-lg p-4 flex flex-col gap-3 h-full min-h-0 transition-colors duration-300 ${
+        {/* ========================================================================= */}
+        {/* BLOCK 1: EVENTOS HOY & MAÑANA                                              */}
+        {/* MOBILE: 1ER LUGAR (order-1) | DESKTOP: 3ER LUGAR (md:order-3, col-span-3)   */}
+        {/* ========================================================================= */}
+        <section className={`order-1 md:order-3 col-span-12 md:col-span-3 border rounded-lg p-3.5 sm:p-4 flex flex-col gap-3.5 sm:gap-4 md:h-full md:min-h-0 transition-colors duration-300 ${
+          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+        }`}>
+          
+          {/* HOY - EVENTOS OUTLOOK */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
+              isLight ? 'border-slate-200' : 'border-[#19191D]'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#940028] animate-pulse"></span>
+                <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                  HOY - {todayHeaderDate}
+                </h3>
+              </div>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                calendarData.todayEvents.length > 0 
+                  ? isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300'
+                  : isLight ? 'text-slate-400' : 'text-zinc-500'
+              }`}>
+                {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+              </span>
+            </div>
+
+            {/* Event list: AutoScroll on desktop, comfortable touch-scroll on mobile */}
+            <AutoScrollBox 
+              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5 pr-0.5 max-h-[380px] md:max-h-none"
+              dependencies={[calendarData.todayEvents]}
+              speed={0.35}
+              pauseFrames={140}
+            >
+              {calendarData.todayEvents.length === 0 ? (
+                <div className={`h-full flex flex-col items-center justify-center text-center p-6 rounded border border-dashed ${
+                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
+                }`}>
+                  <CalendarIcon size={22} className="mb-1.5 opacity-40" />
+                  <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS PROGRAMADOS HOY</span>
+                </div>
+              ) : (
+                calendarData.todayEvents.map(evt => renderEventCard(evt))
+              )}
+            </AutoScrollBox>
+          </div>
+
+          {/* MAÑANA - EVENTOS OUTLOOK */}
+          <div className={`flex-1 min-h-0 flex flex-col border-t pt-3 ${
+            isLight ? 'border-slate-200' : 'border-[#19191D]'
+          }`}>
+            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
+              isLight ? 'border-slate-200' : 'border-[#19191D]'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
+                <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-700' : 'text-zinc-300'}`}>
+                  MAÑANA - {tomorrowHeaderDate}
+                </h3>
+              </div>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                calendarData.tomorrowEvents.length > 0 
+                  ? isLight ? 'bg-slate-100 text-slate-700' : 'bg-zinc-850 text-zinc-300'
+                  : isLight ? 'text-slate-400' : 'text-zinc-500'
+              }`}>
+                {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+              </span>
+            </div>
+
+            <AutoScrollBox 
+              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5 pr-0.5 max-h-[380px] md:max-h-none"
+              dependencies={[calendarData.tomorrowEvents]}
+              speed={0.35}
+              pauseFrames={140}
+              staggerMs={300}
+            >
+              {calendarData.tomorrowEvents.length === 0 ? (
+                <div className={`h-full flex flex-col items-center justify-center text-center p-6 rounded border border-dashed ${
+                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
+                }`}>
+                  <CalendarIcon size={22} className="mb-1.5 opacity-40" />
+                  <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS PROGRAMADOS MAÑANA</span>
+                </div>
+              ) : (
+                calendarData.tomorrowEvents.map(evt => renderEventCard(evt))
+              )}
+            </AutoScrollBox>
+          </div>
+
+        </section>
+
+        {/* ========================================================================= */}
+        {/* BLOCK 2: DIRECTIVAS & OBSERVACIONES                                       */}
+        {/* MOBILE: 2DO LUGAR (order-2) | DESKTOP: 1ER LUGAR (md:order-1, col-span-4)   */}
+        {/* ========================================================================= */}
+        <section className={`order-2 md:order-1 col-span-12 md:col-span-4 border rounded-lg p-3.5 sm:p-4 flex flex-col gap-3 md:h-full md:min-h-0 transition-colors duration-300 ${
           isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
         }`}>
           
@@ -712,7 +913,7 @@ export default function Tv2DashboardPage() {
                 </div>
                 
                 <AutoScrollBox 
-                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5"
+                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 max-h-[260px] md:max-h-none"
                   dependencies={[activeDirectivesHoy]}
                   speed={0.35}
                   pauseFrames={140}
@@ -764,7 +965,7 @@ export default function Tv2DashboardPage() {
                 </div>
                 
                 <AutoScrollBox 
-                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5"
+                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 max-h-[260px] md:max-h-none"
                   dependencies={[activeDirectivesManana]}
                   speed={0.35}
                   pauseFrames={140}
@@ -818,7 +1019,7 @@ export default function Tv2DashboardPage() {
             </div>
 
             <AutoScrollBox 
-              className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1"
+              className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1 max-h-[220px] md:max-h-none"
               dependencies={[observations]}
               speed={0.3}
               pauseFrames={150}
@@ -860,12 +1061,15 @@ export default function Tv2DashboardPage() {
 
         </section>
 
-        {/* CENTER COLUMN (COL-SPAN-5): CALENDARIO MENSUAL INSTITUCIONAL */}
-        <section className={`col-span-5 border rounded-lg p-4 flex flex-col h-full min-h-0 transition-colors duration-300 ${
+        {/* ========================================================================= */}
+        {/* BLOCK 3: CALENDARIO MENSUAL ("SEPTIEMBRE 2026")                           */}
+        {/* MOBILE: OCULTO (hidden) | DESKTOP: MOSTRADO (md:flex, md:order-2, col-5)   */}
+        {/* ========================================================================= */}
+        <section className={`hidden md:flex order-last md:order-2 md:col-span-5 border rounded-lg p-4 flex-col h-full min-h-0 transition-colors duration-300 ${
           isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
         }`}>
           
-          {/* Header con Nombre del Mes en Mayúsculas (como en el mockup) */}
+          {/* Header con Nombre del Mes en Mayúsculas */}
           <div className="flex items-center justify-between border-b pb-2 mb-2 flex-shrink-0">
             <div className="flex items-center gap-2">
               <CalendarIcon size={14} className={isLight ? 'text-[#940028]' : 'text-red-400'} />
@@ -934,15 +1138,16 @@ export default function Tv2DashboardPage() {
                       cell.events.slice(0, 2).map((ev, evIdx) => (
                         <div 
                           key={evIdx}
+                          onClick={() => setSelectedTicketModal(ev)}
                           title={`${ev.timeStr} ${ev.title}`}
-                          className={`text-[9px] font-mono truncate px-1 py-0.5 rounded leading-tight border ${
+                          className={`text-[9px] font-mono truncate px-1 py-0.5 rounded leading-tight border cursor-pointer ${
                             cell.isToday
                               ? isLight 
                                 ? 'bg-[#940028] text-white border-[#7d0022] font-semibold' 
                                 : 'bg-[#7d0022] text-white border-[#940028]'
                               : isLight
-                                ? 'bg-sky-50 text-sky-900 border-sky-200'
-                                : 'bg-sky-950/60 text-sky-300 border-sky-900/60'
+                                ? 'bg-sky-50 text-sky-900 border-sky-200 hover:bg-sky-100'
+                                : 'bg-sky-950/60 text-sky-300 border-sky-900/60 hover:bg-sky-900/60'
                           }`}
                         >
                           <span className="font-bold mr-0.5">{ev.timeStr}</span> {ev.title}
@@ -962,264 +1167,18 @@ export default function Tv2DashboardPage() {
           </div>
 
         </section>
-
-        {/* RIGHT COLUMN (COL-SPAN-3): TARJETAS HOY & MAÑANA (DISEÑO DEL MOCKUP) */}
-        <section className={`col-span-3 border rounded-lg p-4 flex flex-col gap-4 h-full min-h-0 transition-colors duration-300 ${
-          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
-        }`}>
-          
-          {/* HOY - EVENTOS OUTLOOK */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
-              isLight ? 'border-slate-200' : 'border-[#19191D]'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#940028] animate-pulse"></span>
-                <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                  HOY - {todayHeaderDate}
-                </h3>
-              </div>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
-                calendarData.todayEvents.length > 0 
-                  ? isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300'
-                  : isLight ? 'text-slate-400' : 'text-zinc-500'
-              }`}>
-                {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
-              </span>
-            </div>
-
-            <AutoScrollBox 
-              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5"
-              dependencies={[calendarData.todayEvents]}
-              speed={0.35}
-              pauseFrames={140}
-            >
-              {calendarData.todayEvents.length === 0 ? (
-                <div className={`h-full flex flex-col items-center justify-center text-center p-4 rounded border border-dashed ${
-                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
-                }`}>
-                  <CalendarIcon size={20} className="mb-1.5 opacity-40" />
-                  <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS PROGRAMADOS HOY</span>
-                </div>
-              ) : (
-                calendarData.todayEvents.map(evt => (
-                  <div 
-                    key={evt.id}
-                    className={`p-3 rounded-md border flex flex-col gap-2 transition shadow-xs ${
-                      isLight 
-                        ? 'bg-slate-50/90 border-slate-200 hover:border-[#940028]/50 text-slate-800' 
-                        : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white'
-                    }`}
-                  >
-                    {/* Time Badges */}
-                    <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
-                          <>
-                            <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                              isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
-                            }`}>
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                              EVENTO: {evt.aiAnalysis.event_real_time}
-                            </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                              isLight ? 'bg-slate-200 text-slate-700' : 'bg-zinc-850 text-zinc-400'
-                            }`}>
-                              <Clock size={10} /> Armado: {evt.timeStr} hs
-                            </span>
-                          </>
-                        ) : (
-                          <span className={`text-xs font-extrabold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                            isLight ? 'bg-[#940028] text-white shadow-2xs' : 'bg-[#940028] text-white shadow-2xs'
-                          }`}>
-                            <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
-                          </span>
-                        )}
-                      </div>
-
-                      {evt.location && (
-                        <span className={`text-[9px] font-mono truncate max-w-[120px] flex items-center gap-0.5 ${
-                          isLight ? 'text-slate-600' : 'text-zinc-400'
-                        }`}>
-                          <MapPin size={10} /> {evt.location}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Discrepancy Note if present */}
-                    {evt.aiAnalysis?.has_discrepancy && (
-                      <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
-                        isLight ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
-                      }`}>
-                        <AlertCircle size={11} className="flex-shrink-0 text-amber-500" />
-                        <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
-                      </div>
-                    )}
-
-                    <h4 className={`text-xs font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                      {evt.title}
-                    </h4>
-
-                    {/* Equipment tags if extracted */}
-                    {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
-                          <span 
-                            key={tagIdx}
-                            className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
-                              isLight ? 'bg-white text-slate-700 border-slate-200 shadow-2xs' : 'bg-zinc-900 text-zinc-300 border-zinc-800'
-                            }`}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {evt.description && (
-                      <p className={`text-[11px] line-clamp-2 leading-tight ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
-                        {evt.description}
-                      </p>
-                    )}
-                  </div>
-                ))
-              )}
-            </AutoScrollBox>
-          </div>
-
-          {/* MAÑANA - EVENTOS OUTLOOK */}
-          <div className={`flex-1 min-h-0 flex flex-col border-t pt-3 ${
-            isLight ? 'border-slate-200' : 'border-[#19191D]'
-          }`}>
-            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
-              isLight ? 'border-slate-200' : 'border-[#19191D]'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
-                <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-700' : 'text-zinc-300'}`}>
-                  MAÑANA - {tomorrowHeaderDate}
-                </h3>
-              </div>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
-                calendarData.tomorrowEvents.length > 0 
-                  ? isLight ? 'bg-slate-100 text-slate-700' : 'bg-zinc-800 text-zinc-300'
-                  : isLight ? 'text-slate-400' : 'text-zinc-500'
-              }`}>
-                {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
-              </span>
-            </div>
-
-            <AutoScrollBox 
-              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5"
-              dependencies={[calendarData.tomorrowEvents]}
-              speed={0.35}
-              pauseFrames={140}
-              staggerMs={300}
-            >
-              {calendarData.tomorrowEvents.length === 0 ? (
-                <div className={`h-full flex flex-col items-center justify-center text-center p-4 rounded border border-dashed ${
-                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
-                }`}>
-                  <CalendarIcon size={20} className="mb-1.5 opacity-40" />
-                  <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS PROGRAMADOS MAÑANA</span>
-                </div>
-              ) : (
-                calendarData.tomorrowEvents.map(evt => (
-                  <div 
-                    key={evt.id}
-                    className={`p-3 rounded-md border flex flex-col gap-2 transition shadow-xs ${
-                      isLight 
-                        ? 'bg-slate-50/90 border-slate-200 text-slate-800' 
-                        : 'bg-[#141418] border-zinc-800 text-white'
-                    }`}
-                  >
-                    {/* Time Badges */}
-                    <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
-                          <>
-                            <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                              isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
-                            }`}>
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                              EVENTO: {evt.aiAnalysis.event_real_time}
-                            </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                              isLight ? 'bg-slate-200 text-slate-700' : 'bg-zinc-850 text-zinc-400'
-                            }`}>
-                              <Clock size={10} /> Armado: {evt.timeStr} hs
-                            </span>
-                          </>
-                        ) : (
-                          <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                            isLight 
-                              ? 'bg-slate-200 text-slate-800 border border-slate-300' 
-                              : 'bg-zinc-850 text-zinc-200 border border-zinc-700'
-                          }`}>
-                            <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
-                          </span>
-                        )}
-                      </div>
-
-                      {evt.location && (
-                        <span className={`text-[9px] font-mono truncate max-w-[120px] flex items-center gap-0.5 ${
-                          isLight ? 'text-slate-600' : 'text-zinc-400'
-                        }`}>
-                          <MapPin size={10} /> {evt.location}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Discrepancy Note if present */}
-                    {evt.aiAnalysis?.has_discrepancy && (
-                      <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
-                        isLight ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
-                      }`}>
-                        <AlertCircle size={11} className="flex-shrink-0 text-amber-500" />
-                        <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
-                      </div>
-                    )}
-
-                    <h4 className={`text-xs font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                      {evt.title}
-                    </h4>
-
-                    {/* Equipment tags */}
-                    {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
-                          <span 
-                            key={tagIdx}
-                            className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
-                              isLight ? 'bg-white text-slate-700 border-slate-200 shadow-2xs' : 'bg-zinc-900 text-zinc-300 border-zinc-800'
-                            }`}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {evt.description && (
-                      <p className={`text-[11px] line-clamp-2 leading-tight ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
-                        {evt.description}
-                      </p>
-                    )}
-                  </div>
-                ))
-              )}
-            </AutoScrollBox>
-          </div>
-
-        </section>
       </div>
 
-      {/* BOTTOM PANEL: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL) */}
-      <section className={`relative z-10 border rounded-lg p-3.5 flex flex-col h-[30%] min-h-[200px] transition-colors duration-300 ${
+      {/* ========================================================================= */}
+      {/* BLOCK 4: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL)                       */}
+      {/* MOBILE: 3ER LUGAR (order-3) con selector diario | DESKTOP: 5 columnas      */}
+      {/* ========================================================================= */}
+      <section className={`relative z-10 border rounded-lg p-3.5 flex flex-col md:h-[30%] md:min-h-[200px] transition-colors duration-300 order-3 md:order-4 ${
         isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
       }`}>
 
-        <div className="grid grid-cols-5 gap-3 flex-grow overflow-hidden">
+        {/* 1. DESKTOP VIEW: 5-Column Almanac Grid with AutoScroll */}
+        <div className="hidden md:grid md:grid-cols-5 gap-3 flex-grow overflow-hidden">
           {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'].map((day, idx) => {
             const dayEvents = getEventsForDay(day);
 
@@ -1256,32 +1215,244 @@ export default function Tv2DashboardPage() {
             );
           })}
         </div>
+
+        {/* 2. MOBILE VIEW: Daily View defaulting to today's day (e.g. Jueves) + Day Selector Tabs */}
+        <div className="md:hidden flex flex-col gap-3">
+          <div className="flex items-center justify-between border-b pb-2">
+            <h3 className={`text-xs font-bold uppercase tracking-wider font-mono ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
+              SOLICITUDES SEMANALES
+            </h3>
+            <span className="text-[10px] font-mono font-bold text-[#940028]">
+              {selectedMobileDay.toUpperCase()}
+            </span>
+          </div>
+
+          {/* Day Selector Pills */}
+          <div className={`grid grid-cols-5 gap-1.5 p-1 rounded-lg border ${
+            isLight ? 'bg-slate-100 border-slate-200' : 'bg-zinc-950 border-zinc-800'
+          }`}>
+            {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'].map(d => {
+              const isSelected = selectedMobileDay.toLowerCase() === d.toLowerCase();
+              const isActualToday = currentDayName.toLowerCase() === d.toLowerCase();
+
+              return (
+                <button
+                  key={d}
+                  onClick={() => setSelectedMobileDay(d)}
+                  className={`py-2 px-1 rounded text-center font-mono text-xs font-bold transition flex flex-col items-center gap-0.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#940028] text-white shadow-xs'
+                      : isLight 
+                        ? 'text-slate-600 hover:bg-slate-200/70' 
+                        : 'text-zinc-400 hover:bg-zinc-900'
+                  }`}
+                >
+                  <span>{d.slice(0, 3).toUpperCase()}</span>
+                  {isActualToday ? (
+                    <span className={`text-[8px] font-extrabold uppercase ${isSelected ? 'text-red-200' : 'text-[#940028]'}`}>
+                      • HOY
+                    </span>
+                  ) : (
+                    <span className="text-[8px] opacity-0">•</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Cards for selected mobile day */}
+          <div className="space-y-2 pt-1">
+            {getEventsForDay(selectedMobileDay).length === 0 ? (
+              <div className={`text-xs font-mono text-center py-8 uppercase tracking-wider rounded border border-dashed ${
+                isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
+              }`}>
+                SIN SOLICITUDES PARA EL {selectedMobileDay.toUpperCase()}
+              </div>
+            ) : (
+              getEventsForDay(selectedMobileDay).map(evt => (
+                <div 
+                  key={evt.id} 
+                  className={`p-3.5 rounded-lg border flex flex-col gap-1.5 shadow-xs ${
+                    isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#141418] border-zinc-850 text-white'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className={`text-xs font-bold font-mono ${isLight ? 'text-[#940028]' : 'text-red-400'}`}>
+                      {evt.time_range}
+                    </span>
+                    <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                      isLight ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                    }`}>
+                      {selectedMobileDay.toUpperCase()}
+                    </span>
+                  </div>
+                  <h4 className={`text-sm font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    {evt.title}
+                  </h4>
+                  {evt.description && (
+                    <p className={`text-xs leading-relaxed mt-0.5 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+                      {evt.description}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
       </section>
 
-      {/* MODAL EN PANTALLA DE TV: NOTIFICACIÓN DE TAREAS PRÓXIMAS (< 15 MIN) */}
+      {/* ========================================================================= */}
+      {/* INTERACTIVE TICKET DETAILS MODAL / BOTTOM SHEET (FOR MOBILE & DESKTOP)    */}
+      {/* ========================================================================= */}
+      {selectedTicketModal && (
+        <div 
+          onClick={() => setSelectedTicketModal(null)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-xl rounded-t-2xl sm:rounded-2xl border p-5 sm:p-6 flex flex-col gap-4 max-h-[85vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 ${
+              isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#121216] border-zinc-800 text-white'
+            }`}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 border-b pb-3">
+              <div>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#940028] text-white">
+                    HELPDESK OUTLOOK
+                  </span>
+                  {selectedTicketModal.location && (
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                      isLight ? 'bg-slate-100 text-slate-700 border border-slate-200' : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                    }`}>
+                      <MapPin size={11} /> {selectedTicketModal.location}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-extrabold text-base leading-snug">
+                  {selectedTicketModal.title}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setSelectedTicketModal(null)}
+                className={`p-2 rounded-lg cursor-pointer transition ${
+                  isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-zinc-800 text-zinc-400 hover:text-white'
+                }`}
+                title="Cerrar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Time Breakdown */}
+            <div className={`p-3 rounded-lg border grid grid-cols-2 gap-3 ${
+              isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#18181e] border-zinc-800'
+            }`}>
+              <div>
+                <span className={`text-[10px] font-mono uppercase block mb-0.5 ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>
+                  ⏰ Horario de Armado
+                </span>
+                <span className={`text-sm font-bold font-mono ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                  {selectedTicketModal.timeStr} {selectedTicketModal.endTimeStr ? `- ${selectedTicketModal.endTimeStr}` : ''} hs
+                </span>
+              </div>
+              <div>
+                <span className={`text-[10px] font-mono uppercase block mb-0.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>
+                  🎤 Inicio Real del Evento
+                </span>
+                <span className="text-sm font-bold font-mono text-amber-500">
+                  {selectedTicketModal.aiAnalysis?.event_real_time || `${selectedTicketModal.timeStr} hs`}
+                </span>
+              </div>
+            </div>
+
+            {/* Discrepancy Alert Banner */}
+            {selectedTicketModal.aiAnalysis?.has_discrepancy && (
+              <div className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                isLight ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
+              }`}>
+                <AlertCircle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Diferencia de Horario Detectada por IA:</strong>
+                  <span>{selectedTicketModal.aiAnalysis.explanation}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Equipment Checklist */}
+            {selectedTicketModal.aiAnalysis?.equipment_tags && selectedTicketModal.aiAnalysis.equipment_tags.length > 0 && (
+              <div>
+                <h4 className={`text-xs font-mono font-bold uppercase mb-2 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+                  Requerimientos Técnicos Identificados:
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTicketModal.aiAnalysis.equipment_tags.map((tag, idx) => (
+                    <span 
+                      key={idx}
+                      className={`text-xs font-mono font-bold px-3 py-1.5 rounded-lg border shadow-xs ${
+                        isLight ? 'bg-white text-slate-800 border-slate-200' : 'bg-zinc-900 text-zinc-100 border-zinc-700'
+                      }`}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Full Message Body */}
+            <div>
+              <h4 className={`text-xs font-mono font-bold uppercase mb-2 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+                Mensaje Completo del Ticket:
+              </h4>
+              <div className={`p-4 rounded-lg border text-xs font-sans whitespace-pre-line leading-relaxed max-h-52 overflow-y-auto ${
+                isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-zinc-950 border-zinc-900 text-zinc-200'
+              }`}>
+                {selectedTicketModal.description || 'Sin descripción adicional.'}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedTicketModal(null)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#940028] hover:bg-[#b30032] text-white text-xs font-bold font-mono tracking-wider transition cursor-pointer"
+              >
+                Cerrar Detalle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DE ALERTA INMINENTE (< 15 MIN)                                      */}
+      {/* ========================================================================= */}
       {showAlertModal && upcomingAlertTasks.length > 0 && (
         <div 
           onClick={() => setShowAlertModal(false)}
-          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in duration-300"
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
             className="bg-[#0e0e11] border-2 border-red-600 rounded-2xl shadow-2xl shadow-red-950/80 max-w-2xl w-full overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200"
           >
             {/* Header con alarma */}
-            <div className="bg-red-950/60 border-b border-red-900/70 p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-red-600 text-white rounded-xl shadow-lg shadow-red-600/40 animate-bounce">
-                  <Bell size={26} />
+            <div className="bg-red-950/60 border-b border-red-900/70 p-4 sm:p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="p-2.5 sm:p-3 bg-red-600 text-white rounded-xl shadow-lg shadow-red-600/40 animate-bounce">
+                  <Bell size={24} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-lg text-white tracking-wider flex items-center gap-3 font-mono">
+                  <h3 className="font-extrabold text-base sm:text-lg text-white tracking-wider flex items-center gap-2 sm:gap-3 font-mono">
                     ALERTA: TAREA INMINENTE
-                    <span className="text-xs bg-red-600/40 text-red-200 border border-red-500/50 px-2.5 py-0.5 rounded font-mono">
-                      &lt; 15 MINUTOS
+                    <span className="text-[10px] sm:text-xs bg-red-600/40 text-red-200 border border-red-500/50 px-2 py-0.5 rounded font-mono">
+                      &lt; 15 MIN
                     </span>
                   </h3>
-                  <p className="text-xs text-red-200/90 font-medium">Requerimiento programado en breve para el equipo de soporte técnico</p>
+                  <p className="text-[11px] sm:text-xs text-red-200/90 font-medium">Requerimiento programado en breve para el equipo de soporte técnico</p>
                 </div>
               </div>
 
@@ -1290,13 +1461,13 @@ export default function Tv2DashboardPage() {
                 className="text-zinc-400 hover:text-white p-2 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
                 title="Cerrar modal"
               >
-                <X size={22} />
+                <X size={20} />
               </button>
             </div>
 
             {/* Listado de tareas próximas con AutoScroll */}
             <AutoScrollBox 
-              className="p-6 space-y-4 max-h-[65vh] overflow-y-auto no-scrollbar"
+              className="p-4 sm:p-6 space-y-4 max-h-[65vh] overflow-y-auto no-scrollbar"
               dependencies={[upcomingAlertTasks]}
               speed={0.45}
               pauseFrames={120}
@@ -1304,10 +1475,10 @@ export default function Tv2DashboardPage() {
               {upcomingAlertTasks.map((task) => (
                 <div 
                   key={task.id}
-                  className="bg-[#141418] border-2 border-red-900/50 p-5 rounded-xl flex flex-col gap-2.5 relative overflow-hidden shadow-md"
+                  className="bg-[#141418] border-2 border-red-900/50 p-4 sm:p-5 rounded-xl flex flex-col gap-2.5 relative overflow-hidden shadow-md"
                 >
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                       <span className={`text-xs font-mono px-2.5 py-1 rounded font-bold uppercase ${
                         task.sourceType === 'outlook'
                           ? 'bg-blue-950 border border-blue-800 text-blue-300'
@@ -1317,19 +1488,19 @@ export default function Tv2DashboardPage() {
                       }`}>
                         {task.badge}
                       </span>
-                      <span className="font-black text-red-400 font-mono text-base tracking-wider uppercase">
+                      <span className="font-black text-red-400 font-mono text-sm sm:text-base tracking-wider uppercase">
                         {task.title}
                       </span>
                       <span className="text-xs font-mono font-bold bg-red-950 border border-red-800 text-red-200 px-2.5 py-1 rounded flex items-center gap-1.5">
                         <Clock size={13} /> {task.time} hs
                       </span>
                     </div>
-                    <span className="text-sm font-extrabold text-amber-400 font-mono bg-amber-950/40 border border-amber-900/60 px-3 py-0.5 rounded-full animate-pulse">
+                    <span className="text-xs sm:text-sm font-extrabold text-amber-400 font-mono bg-amber-950/40 border border-amber-900/60 px-2.5 sm:px-3 py-0.5 rounded-full animate-pulse">
                       {task.diffMinutes > 0 ? `Faltan ${task.diffMinutes} min` : task.diffMinutes === 0 ? '¡COMIENZA AHORA!' : 'En curso'}
                     </span>
                   </div>
 
-                  <p className="text-zinc-100 text-sm font-semibold leading-relaxed bg-zinc-950/80 p-3.5 rounded-lg border border-zinc-900">
+                  <p className="text-zinc-100 text-xs sm:text-sm font-semibold leading-relaxed bg-zinc-950/80 p-3 sm:p-3.5 rounded-lg border border-zinc-900">
                     {task.text}
                   </p>
 
@@ -1344,15 +1515,15 @@ export default function Tv2DashboardPage() {
             </AutoScrollBox>
 
             {/* Footer con cuenta regresiva de 50 segundos */}
-            <div className="bg-zinc-950 border-t border-zinc-900 p-4 px-6 flex items-center justify-between">
+            <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 sm:p-4 px-4 sm:px-6 flex items-center justify-between">
               <span className="text-xs text-zinc-400 font-mono flex items-center gap-2">
                 <Clock size={14} className="text-red-400" />
-                Cierre automático en <strong className="text-white font-bold">{alertCountdown}s</strong> (o haz clic afuera)
+                Cierre automático en <strong className="text-white font-bold">{alertCountdown}s</strong> (o toca afuera)
               </span>
 
               <button
                 onClick={() => setShowAlertModal(false)}
-                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold px-5 py-2 rounded-lg transition cursor-pointer font-mono"
+                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold px-4 sm:px-5 py-2 rounded-lg transition cursor-pointer font-mono"
               >
                 Entendido / Salir
               </button>
