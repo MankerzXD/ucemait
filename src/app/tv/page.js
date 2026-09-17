@@ -16,19 +16,14 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
 
     let animId;
     let scrollTopVal = 0;
-    let state = 'INIT';
+    let state = 'PAUSE_TOP';
     let timer = 0;
 
     const startTimer = setTimeout(() => {
       if (!container) return;
-      if (container.scrollHeight <= container.clientHeight + 4) {
-        container.scrollTop = 0;
-        return;
-      }
       state = 'PAUSE_TOP';
       timer = 0;
-      scrollTopVal = 0;
-      container.scrollTop = 0;
+      scrollTopVal = container.scrollTop;
       animId = requestAnimationFrame(loop);
     }, 400 + staggerMs);
 
@@ -36,12 +31,17 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
       if (!container) return;
 
       if (isHoveredRef.current) {
+        scrollTopVal = container.scrollTop;
         animId = requestAnimationFrame(loop);
         return;
       }
 
       if (container.scrollHeight <= container.clientHeight + 4) {
-        container.scrollTop = 0;
+        if (container.scrollTop !== 0) {
+          container.scrollTop = 0;
+          scrollTopVal = 0;
+        }
+        animId = requestAnimationFrame(loop);
         return;
       }
 
@@ -55,7 +55,8 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
         scrollTopVal += speed;
         container.scrollTop = scrollTopVal;
 
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) {
+        const maxScroll = container.scrollHeight - container.clientHeight;
+        if (container.scrollTop >= maxScroll - 2) {
           state = 'PAUSE_BOTTOM';
           timer = 0;
         }
@@ -67,7 +68,7 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
         }
       } else if (state === 'RESETTING') {
         // Smooth return to top
-        scrollTopVal = Math.max(0, scrollTopVal - speed * 4);
+        scrollTopVal = Math.max(0, container.scrollTop - speed * 4);
         container.scrollTop = scrollTopVal;
 
         if (scrollTopVal <= 0) {
@@ -100,14 +101,14 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, p
 }
 
 // --- HELPER COMPONENT: DailyEventsList using AutoScrollBox ---
-function DailyEventsList({ events, isLight }) {
+function DailyEventsList({ events, isLight, staggerMs = 0 }) {
   return (
     <AutoScrollBox 
-      className="flex-grow overflow-y-auto no-scrollbar p-2.5 space-y-2 h-full"
+      className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-2.5 space-y-2"
       dependencies={[events]}
       speed={0.35}
       pauseFrames={120}
-      staggerMs={Math.random() * 800}
+      staggerMs={staggerMs}
     >
       {events.map(evt => (
         <div 
@@ -663,7 +664,7 @@ export default function TvDashboardPage() {
                 </div>
                 
                 <AutoScrollBox 
-                  className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1"
+                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-1"
                   dependencies={[activeDirectivesHoy]}
                   speed={0.35}
                   pauseFrames={140}
@@ -715,7 +716,7 @@ export default function TvDashboardPage() {
                 </div>
                 
                 <AutoScrollBox 
-                  className="flex-grow overflow-y-auto no-scrollbar space-y-2 pr-1"
+                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-1"
                   dependencies={[activeDirectivesManana]}
                   speed={0.35}
                   pauseFrames={140}
@@ -841,7 +842,7 @@ export default function TvDashboardPage() {
 
         {/* 5-Column Almanac Grid */}
         <div className="grid grid-cols-5 gap-3 flex-grow overflow-hidden">
-          {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'].map((day) => {
+          {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'].map((day, idx) => {
             const dayEvents = getEventsForDay(day);
 
             return (
@@ -871,7 +872,7 @@ export default function TvDashboardPage() {
                     SIN EVENTOS
                   </div>
                 ) : (
-                  <DailyEventsList events={dayEvents} isLight={isLight} />
+                  <DailyEventsList events={dayEvents} isLight={isLight} staggerMs={idx * 200} />
                 )}
               </div>
             );

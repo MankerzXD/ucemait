@@ -7,8 +7,8 @@ import {
   Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle, Bell, Clock, X
 } from 'lucide-react';
 
-// --- HELPER COMPONENT: AutoScrollBox for long modal lists ---
-function AutoScrollBox({ children, className, dependencies = [], speed = 0.4, pauseFrames = 120 }) {
+// --- HELPER COMPONENT: AutoScrollBox for long lists and modals ---
+function AutoScrollBox({ children, className, dependencies = [], speed = 0.35, pauseFrames = 120, staggerMs = 0 }) {
   const containerRef = useRef(null);
   const isHoveredRef = useRef(false);
 
@@ -18,32 +18,33 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.4, pa
 
     let animId;
     let scrollTopVal = 0;
-    let state = 'INIT';
+    let state = 'PAUSE_TOP';
     let timer = 0;
 
     const startTimer = setTimeout(() => {
       if (!container) return;
-      if (container.scrollHeight <= container.clientHeight + 4) {
-        container.scrollTop = 0;
-        return;
-      }
       state = 'PAUSE_TOP';
       timer = 0;
-      scrollTopVal = 0;
-      container.scrollTop = 0;
+      scrollTopVal = container.scrollTop;
       animId = requestAnimationFrame(loop);
-    }, 400);
+    }, 400 + staggerMs);
 
     function loop() {
       if (!container) return;
 
       if (isHoveredRef.current) {
+        scrollTopVal = container.scrollTop;
         animId = requestAnimationFrame(loop);
         return;
       }
 
+      // If content does not exceed container height, keep at top and loop lightly
       if (container.scrollHeight <= container.clientHeight + 4) {
-        container.scrollTop = 0;
+        if (container.scrollTop !== 0) {
+          container.scrollTop = 0;
+          scrollTopVal = 0;
+        }
+        animId = requestAnimationFrame(loop);
         return;
       }
 
@@ -57,7 +58,8 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.4, pa
         scrollTopVal += speed;
         container.scrollTop = scrollTopVal;
 
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) {
+        const maxScroll = container.scrollHeight - container.clientHeight;
+        if (container.scrollTop >= maxScroll - 2) {
           state = 'PAUSE_BOTTOM';
           timer = 0;
         }
@@ -68,7 +70,7 @@ function AutoScrollBox({ children, className, dependencies = [], speed = 0.4, pa
           timer = 0;
         }
       } else if (state === 'RESETTING') {
-        scrollTopVal = Math.max(0, scrollTopVal - speed * 4);
+        scrollTopVal = Math.max(0, container.scrollTop - speed * 4);
         container.scrollTop = scrollTopVal;
 
         if (scrollTopVal <= 0) {
@@ -681,27 +683,34 @@ export default function ManagementPage() {
           </form>
 
           {/* List display */}
-          <div className="mt-4 flex-grow overflow-y-auto max-h-[300px] space-y-2">
+          <div className="mt-4 flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase text-zinc-400 font-mono">Listado de Directivas</h3>
             {directivesList.length === 0 ? (
               <p className="text-[10px] text-zinc-600 font-mono">No hay directivas cargadas.</p>
             ) : (
-              directivesList.map(dir => (
-                <div key={dir.id} className="bg-zinc-950 border border-zinc-850 p-2.5 rounded text-xs relative">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-red-400 font-mono">{dir.classroom} ({dir.directive_date}{dir.directive_time ? ` · ${dir.directive_time} hs` : ''})</span>
-                    <button onClick={() => deleteItem('directives', dir.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                  <p className="text-zinc-300 text-[11px]">{dir.requirements}</p>
-                  {isCoordinadorOrAdmin && (
-                    <div className="mt-1.5 text-[9px] text-zinc-500 font-mono border-t border-zinc-900 pt-1 flex justify-between">
-                      <span>Log: {dir.created_by_email}</span>
+              <AutoScrollBox 
+                className="max-h-[260px] overflow-y-auto no-scrollbar space-y-2 pr-1"
+                dependencies={[directivesList]}
+                speed={0.35}
+                pauseFrames={140}
+              >
+                {directivesList.map(dir => (
+                  <div key={dir.id} className="bg-zinc-950 border border-zinc-850 p-2.5 rounded text-xs relative">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-red-400 font-mono">{dir.classroom} ({dir.directive_date}{dir.directive_time ? ` · ${dir.directive_time} hs` : ''})</span>
+                      <button onClick={() => deleteItem('directives', dir.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
+                        <Trash2 size={12} />
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))
+                    <p className="text-zinc-300 text-[11px]">{dir.requirements}</p>
+                    {isCoordinadorOrAdmin && (
+                      <div className="mt-1.5 text-[9px] text-zinc-500 font-mono border-t border-zinc-900 pt-1 flex justify-between">
+                        <span>Log: {dir.created_by_email}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </AutoScrollBox>
             )}
           </div>
         </section>
@@ -749,31 +758,38 @@ export default function ManagementPage() {
           </form>
 
           {/* List display */}
-          <div className="mt-4 flex-grow overflow-y-auto max-h-[300px] space-y-2">
+          <div className="mt-4 flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase text-zinc-400 font-mono">Listado de Observaciones</h3>
             {observationsList.length === 0 ? (
               <p className="text-[10px] text-zinc-600 font-mono">No hay observaciones cargadas.</p>
             ) : (
-              observationsList.map(obs => (
-                <div key={obs.id} className={`bg-zinc-950 border p-2.5 rounded text-xs relative ${
-                  obs.severity === 'danger' ? 'border-red-900/55' : obs.severity === 'warning' ? 'border-amber-900/55' : 'border-zinc-850'
-                }`}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className={`font-mono text-[10px] uppercase px-1.5 py-0.5 rounded font-bold ${
-                      obs.severity === 'danger' ? 'bg-red-950 text-red-500' : obs.severity === 'warning' ? 'bg-amber-950 text-amber-500' : 'bg-zinc-900 text-zinc-400'
-                    }`}>{obs.severity}</span>
-                    <button onClick={() => deleteItem('observations', obs.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                  <p className="text-zinc-300 text-[11px]">{obs.text}</p>
-                  {isCoordinadorOrAdmin && (
-                    <div className="mt-1.5 text-[9px] text-zinc-500 font-mono border-t border-zinc-900 pt-1 flex justify-between">
-                      <span>Log: {obs.created_by_email}</span>
+              <AutoScrollBox 
+                className="max-h-[260px] overflow-y-auto no-scrollbar space-y-2 pr-1"
+                dependencies={[observationsList]}
+                speed={0.35}
+                pauseFrames={140}
+              >
+                {observationsList.map(obs => (
+                  <div key={obs.id} className={`bg-zinc-950 border p-2.5 rounded text-xs relative ${
+                    obs.severity === 'danger' ? 'border-red-900/55' : obs.severity === 'warning' ? 'border-amber-900/55' : 'border-zinc-850'
+                  }`}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className={`font-mono text-[10px] uppercase px-1.5 py-0.5 rounded font-bold ${
+                        obs.severity === 'danger' ? 'bg-red-950 text-red-500' : obs.severity === 'warning' ? 'bg-amber-950 text-amber-500' : 'bg-zinc-900 text-zinc-400'
+                      }`}>{obs.severity}</span>
+                      <button onClick={() => deleteItem('observations', obs.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
+                        <Trash2 size={12} />
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))
+                    <p className="text-zinc-300 text-[11px]">{obs.text}</p>
+                    {isCoordinadorOrAdmin && (
+                      <div className="mt-1.5 text-[9px] text-zinc-500 font-mono border-t border-zinc-900 pt-1 flex justify-between">
+                        <span>Log: {obs.created_by_email}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </AutoScrollBox>
             )}
           </div>
         </section>
@@ -855,28 +871,35 @@ export default function ManagementPage() {
           </form>
 
           {/* List display */}
-          <div className="mt-4 flex-grow overflow-y-auto max-h-[300px] space-y-2">
+          <div className="mt-4 flex flex-col gap-2">
             <h3 className="text-xs font-bold uppercase text-zinc-400 font-mono">Listado de Eventos</h3>
             {eventsList.length === 0 ? (
               <p className="text-[10px] text-zinc-600 font-mono">No hay eventos cargados.</p>
             ) : (
-              eventsList.map(evt => (
-                <div key={evt.id} className="bg-zinc-950 border border-zinc-850 p-2.5 rounded text-xs relative">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-amber-500 font-mono">{evt.day_of_week} ({evt.time_range})</span>
-                    <button onClick={() => deleteItem('fixed_events', evt.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                  <h4 className="font-bold text-zinc-200">{evt.title}</h4>
-                  <p className="text-zinc-400 text-[11px]">{evt.description}</p>
-                  {isCoordinadorOrAdmin && (
-                    <div className="mt-1.5 text-[9px] text-zinc-500 font-mono border-t border-zinc-900 pt-1 flex justify-between">
-                      <span>Log: {evt.created_by_email}</span>
+              <AutoScrollBox 
+                className="max-h-[260px] overflow-y-auto no-scrollbar space-y-2 pr-1"
+                dependencies={[eventsList]}
+                speed={0.35}
+                pauseFrames={140}
+              >
+                {eventsList.map(evt => (
+                  <div key={evt.id} className="bg-zinc-950 border border-zinc-850 p-2.5 rounded text-xs relative">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-amber-500 font-mono">{evt.day_of_week} ({evt.time_range})</span>
+                      <button onClick={() => deleteItem('fixed_events', evt.id)} className="text-zinc-600 hover:text-red-500 cursor-pointer">
+                        <Trash2 size={12} />
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))
+                    <h4 className="font-bold text-zinc-200">{evt.title}</h4>
+                    <p className="text-zinc-400 text-[11px]">{evt.description}</p>
+                    {isCoordinadorOrAdmin && (
+                      <div className="mt-1.5 text-[9px] text-zinc-500 font-mono border-t border-zinc-900 pt-1 flex justify-between">
+                        <span>Log: {evt.created_by_email}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </AutoScrollBox>
             )}
           </div>
         </section>
