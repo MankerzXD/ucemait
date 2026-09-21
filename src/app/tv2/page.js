@@ -6,6 +6,7 @@ import {
   Clock, ShieldAlert, Activity, Bell, X, Calendar as CalendarIcon, MapPin, 
   Ticket, AlertCircle, ChevronRight, CheckCircle2, FileText, Layers
 } from 'lucide-react';
+import AdaptiveWeeklyCalendar from '@/components/AdaptiveWeeklyCalendar';
 
 // --- HELPER COMPONENT: Realtime Header Clock (isolated to avoid re-rendering entire dashboard) ---
 function HeaderClock({ isLight }) {
@@ -241,6 +242,38 @@ export default function Tv2DashboardPage() {
   const [alertCountdown, setAlertCountdown] = useState(50);
   const alertedDirectivesRef = useRef(new Set());
 
+  // --- DESKTOP & 4-DAY MODE STATES ---
+  const [isDesktop, setIsDesktop] = useState(true);
+  const [isFourDayMode, setIsFourDayMode] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem('tv2_is_four_day_mode');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  const handleToggleFourDayMode = () => {
+    setIsFourDayMode(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('tv2_is_four_day_mode', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const mainContainerRef = useRef(null);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    handleWindowResize();
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
   // Play notification chime on TV
   const playAlertChime = () => {
     try {
@@ -290,9 +323,16 @@ export default function Tv2DashboardPage() {
 
   // Fetch calendar on mount + poll every 60 seconds
   useEffect(() => {
-    fetchOutlookCalendar();
+    let isMounted = true;
+    const load = async () => {
+      if (isMounted) await fetchOutlookCalendar();
+    };
+    load();
     const interval = setInterval(fetchOutlookCalendar, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Check for upcoming directives & calendar events (< 15 min away)
@@ -437,7 +477,6 @@ export default function Tv2DashboardPage() {
   useEffect(() => {
     if (!showAlertModal) return;
 
-    setAlertCountdown(50);
     const interval = setInterval(() => {
       setAlertCountdown(prev => {
         if (prev <= 1) {
@@ -450,6 +489,38 @@ export default function Tv2DashboardPage() {
 
     return () => clearInterval(interval);
   }, [showAlertModal]);
+
+  const loadDemoData = () => {
+    const localTheme = localStorage.getItem('demo_tv_theme');
+    if (localTheme) setTvTheme(localTheme);
+    setDirectives(JSON.parse(localStorage.getItem('demo_directives') || '[]'));
+    setObservations(JSON.parse(localStorage.getItem('demo_observations') || '[]'));
+    setEvents(JSON.parse(localStorage.getItem('demo_events') || '[]'));
+  };
+
+  const fetchInitialData = async () => {
+    try {
+      const { data: themeData } = await supabase.from('tv_settings').select('value').eq('key', 'tv_theme').single();
+      if (themeData?.value) {
+        setTvTheme(themeData.value);
+      } else {
+        const localTheme = localStorage.getItem('demo_tv_theme');
+        if (localTheme) setTvTheme(localTheme);
+      }
+
+      const { data: dirs } = await supabase.from('directives').select('*').order('created_at', { ascending: false });
+      if (dirs) setDirectives(dirs);
+
+      const { data: obs } = await supabase.from('observations').select('*').order('created_at', { ascending: false });
+      if (obs) setObservations(obs);
+
+      const { data: evts } = await supabase.from('fixed_events').select('*').order('created_at', { ascending: false });
+      if (evts) setEvents(evts);
+    } catch (err) {
+      console.error('Error fetching TV data:', err);
+      loadDemoData();
+    }
+  };
 
   // Supabase Real-time subscriptions
   useEffect(() => {
@@ -506,38 +577,6 @@ export default function Tv2DashboardPage() {
       }
     };
   }, []);
-
-  const fetchInitialData = async () => {
-    try {
-      const { data: themeData } = await supabase.from('tv_settings').select('value').eq('key', 'tv_theme').single();
-      if (themeData?.value) {
-        setTvTheme(themeData.value);
-      } else {
-        const localTheme = localStorage.getItem('demo_tv_theme');
-        if (localTheme) setTvTheme(localTheme);
-      }
-
-      const { data: dirs } = await supabase.from('directives').select('*').order('created_at', { ascending: false });
-      if (dirs) setDirectives(dirs);
-
-      const { data: obs } = await supabase.from('observations').select('*').order('created_at', { ascending: false });
-      if (obs) setObservations(obs);
-
-      const { data: evts } = await supabase.from('fixed_events').select('*').order('created_at', { ascending: false });
-      if (evts) setEvents(evts);
-    } catch (err) {
-      console.error('Error fetching TV data:', err);
-      loadDemoData();
-    }
-  };
-
-  const loadDemoData = () => {
-    const localTheme = localStorage.getItem('demo_tv_theme');
-    if (localTheme) setTvTheme(localTheme);
-    setDirectives(JSON.parse(localStorage.getItem('demo_directives') || '[]'));
-    setObservations(JSON.parse(localStorage.getItem('demo_observations') || '[]'));
-    setEvents(JSON.parse(localStorage.getItem('demo_events') || '[]'));
-  };
 
   // Listen to storage changes for cross-tab sync in Demo Mode
   useEffect(() => {
@@ -660,101 +699,626 @@ export default function Tv2DashboardPage() {
   }, []);
 
   // Card component renderer for Outlook events (reused in desktop and mobile)
-  const renderEventCard = (evt) => (
-    <div 
-      key={evt.id}
-      onClick={() => setSelectedTicketModal(evt)}
-      className={`p-3.5 rounded-lg border flex flex-col gap-2.5 transition shadow-xs cursor-pointer active:scale-[0.99] group ${
-        isLight 
-          ? 'bg-white border-slate-200 hover:border-[#940028]/60 text-slate-800 hover:shadow-md' 
-          : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white hover:bg-zinc-900/60'
-      }`}
-    >
-      {/* Time Badges & Location */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
-            <>
-              <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
-                isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
+  const renderEventCard = (evt) => {
+    const isAllDay = (evt.timeStr && evt.timeStr.toLowerCase().includes('todo el d')) || 
+                     (evt.endTimeStr && evt.endTimeStr.toLowerCase().includes('todo el d'));
+
+    const timeLabel = isAllDay 
+      ? 'Todo el día' 
+      : evt.endTimeStr && evt.endTimeStr !== evt.timeStr 
+        ? `${evt.timeStr} - ${evt.endTimeStr} hs` 
+        : `${evt.timeStr} hs`;
+
+    return (
+      <div 
+        key={evt.id}
+        onClick={() => setSelectedTicketModal(evt)}
+        className={`p-3 rounded-xl border flex flex-col gap-2 transition-all duration-200 shadow-xs cursor-pointer active:scale-[0.99] group ${
+          isLight 
+            ? 'bg-white border-slate-200 hover:border-[#940028]/60 text-slate-800 hover:shadow-md' 
+            : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white hover:bg-[#18181e]'
+        }`}
+      >
+        {/* Time Badges & Location */}
+        <div className="flex items-center justify-between gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
+              <>
+                <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
+                  isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
+                }`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                  EVENTO: {evt.aiAnalysis.event_real_time}
+                </span>
+                <span className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                  isLight ? 'bg-slate-100 text-slate-600' : 'bg-zinc-850 text-zinc-400'
+                }`}>
+                  <Clock size={10} /> Armado: {evt.timeStr} hs
+                </span>
+              </>
+            ) : isAllDay ? (
+              <span className={`text-[10.5px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1.5 ${
+                isLight 
+                  ? 'bg-blue-50 text-blue-800 border border-blue-200' 
+                  : 'bg-blue-950/60 text-blue-300 border border-blue-900/60'
               }`}>
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                EVENTO: {evt.aiAnalysis.event_real_time}
+                <Clock size={11} className="text-blue-400" /> Todo el día
               </span>
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                isLight ? 'bg-slate-100 text-slate-600' : 'bg-zinc-850 text-zinc-400'
-              }`}>
-                <Clock size={10} /> Armado: {evt.timeStr} hs
+            ) : (
+              <span className="text-[11px] font-extrabold font-mono px-2.5 py-0.5 rounded flex items-center gap-1 bg-[#940028] text-white shadow-xs">
+                <Clock size={11} /> {timeLabel}
               </span>
-            </>
-          ) : (
-            <span className={`text-xs font-extrabold font-mono px-2.5 py-0.5 rounded flex items-center gap-1 ${
-              isLight ? 'bg-[#940028] text-white shadow-2xs' : 'bg-[#940028] text-white shadow-2xs'
+            )}
+          </div>
+
+          {evt.location && (
+            <span className={`text-[9.5px] font-mono truncate max-w-[140px] flex items-center gap-1 px-1.5 py-0.5 rounded ${
+              isLight ? 'bg-slate-100 text-slate-600' : 'bg-zinc-850 text-zinc-300 border border-zinc-750'
             }`}>
-              <Clock size={11} /> {evt.timeStr} {evt.endTimeStr ? `- ${evt.endTimeStr}` : 'hs'}
+              <MapPin size={10} className="text-[#940028] flex-shrink-0" />
+              <span className="truncate">{evt.location}</span>
             </span>
           )}
         </div>
 
-        {evt.location && (
-          <span className={`text-[9px] font-mono truncate max-w-[130px] flex items-center gap-0.5 ${
-            isLight ? 'text-slate-500' : 'text-zinc-400'
+        {/* Discrepancy Note if present */}
+        {evt.aiAnalysis?.has_discrepancy && (
+          <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
+            isLight ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
           }`}>
-            <MapPin size={10} /> {evt.location}
-          </span>
+            <AlertCircle size={12} className="flex-shrink-0 text-amber-500" />
+            <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
+          </div>
         )}
+
+        {/* Title */}
+        <h4 className={`text-xs sm:text-[13px] font-bold leading-snug group-hover:text-[#e03158] transition-colors ${
+          isLight ? 'text-slate-900' : 'text-zinc-100'
+        }`}>
+          {evt.title}
+        </h4>
+
+        {/* Equipment tags */}
+        {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
+              <span 
+                key={tagIdx}
+                className={`text-[9.5px] font-mono font-semibold px-2 py-0.5 rounded border ${
+                  isLight ? 'bg-slate-50 text-slate-700 border-slate-200' : 'bg-zinc-850 text-zinc-300 border-zinc-750'
+                }`}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Description Snippet */}
+        {evt.description && (
+          <p className={`text-[11px] line-clamp-2 leading-relaxed ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+            {evt.description}
+          </p>
+        )}
+
+        {/* Action link */}
+        <div className={`pt-1.5 border-t flex items-center justify-between text-[10px] font-mono ${
+          isLight ? 'border-slate-100 text-slate-500' : 'border-zinc-800/80 text-zinc-400'
+        }`}>
+          <span className="text-[#e03158] group-hover:text-red-300 font-bold flex items-center gap-1 transition-colors">
+            Ver requerimientos <ChevronRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+          </span>
+          <span className="text-[9px] opacity-60">Tocar para abrir</span>
+        </div>
+      </div>
+    );
+  };
+
+  // =========================================================================
+  // RENDER BLOCKS FOR DASHBOARD WORKSPACE
+  // =========================================================================
+  
+  // BLOCK 2: DIRECTIVAS & OBSERVACIONES (occupies 30% width)
+  const renderBlockDirectivas = (extraClass = '') => (
+    <section 
+      className={`w-full h-full min-w-0 min-h-0 overflow-hidden border rounded-lg p-3.5 sm:p-4 flex flex-col gap-3 transition-colors duration-300 ${extraClass} ${
+        isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+      }`}
+    >
+      {/* TOP HALF: DIRECTIVAS */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${isLight ? 'border-slate-200' : 'border-[#19191D]'}`}>
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={15} className={isLight ? 'text-[#940028]' : 'text-red-400'} />
+            <h2 className={`text-xs font-bold tracking-widest uppercase ${isLight ? 'text-[#940028]' : 'text-white'}`}>
+              DIRECTIVAS
+            </h2>
+          </div>
+          <span className={`text-[9px] font-mono px-2 py-0.5 rounded ${isLight ? 'bg-slate-100 text-slate-600' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'}`}>
+            HOY + MAÑANA
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5 flex-grow min-h-0 overflow-hidden">
+          {/* HOY Column */}
+          <div className="flex flex-col gap-1.5 h-full min-h-0">
+            <div className={`px-2.5 py-1 rounded flex items-center gap-1.5 flex-shrink-0 border ${
+              isLight ? 'bg-[#940028]/10 border-[#940028]/30' : 'bg-[#141418] border-[#940028]/50'
+            }`}>
+              <span className="w-2 h-2 rounded-full bg-[#940028]"></span>
+              <span className={`text-[10px] font-bold tracking-wide ${isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'}`}>HOY</span>
+            </div>
+            
+            <AutoScrollBox 
+              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 max-h-[260px] md:max-h-none"
+              dependencies={[activeDirectivesHoy]}
+              speed={0.35}
+              pauseFrames={140}
+            >
+              {activeDirectivesHoy.length === 0 ? (
+                <div className={`h-full min-h-[60px] flex flex-col items-center justify-center text-center p-3 rounded border border-dashed ${
+                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/30 text-zinc-600'
+                }`}>
+                  <span className="text-[10px] font-mono uppercase font-bold tracking-wider">Sin directivas hoy</span>
+                </div>
+              ) : (
+                activeDirectivesHoy.map(item => (
+                  <div 
+                    key={item.id} 
+                    className={`border p-2 rounded flex flex-col gap-1 transition shadow-xs ${
+                      isLight 
+                        ? 'bg-slate-50 border-slate-200 hover:border-[#940028]/40' 
+                        : 'bg-[#141418] border-zinc-850'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className={`font-bold uppercase tracking-wider text-[10px] font-mono ${
+                        isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'
+                      }`}>{item.displayName}</span>
+                      {item.time && (
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                          isLight 
+                            ? 'bg-[#940028] text-white border border-[#7d0022]' 
+                            : 'bg-[#4d0015] border border-[#7d0022] text-[#f8ccd5]'
+                        }`}>
+                          <Clock size={9} /> {item.time} hs
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-[11px] font-medium leading-snug ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
+                      {item.requirements}
+                    </p>
+                  </div>
+                ))
+              )}
+            </AutoScrollBox>
+          </div>
+
+          {/* MAÑANA Column */}
+          <div className="flex flex-col gap-1.5 h-full min-h-0">
+            <div className={`px-2.5 py-1 rounded flex items-center gap-1.5 flex-shrink-0 border ${
+              isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#141418] border-[#19191D]'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
+              <span className={`text-[10px] font-bold tracking-wide ${isLight ? 'text-slate-700' : 'text-zinc-400'}`}>MAÑANA</span>
+            </div>
+            
+            <AutoScrollBox 
+              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 max-h-[260px] md:max-h-none"
+              dependencies={[activeDirectivesManana]}
+              speed={0.35}
+              pauseFrames={140}
+              staggerMs={300}
+            >
+              {activeDirectivesManana.length === 0 ? (
+                <div className={`h-full min-h-[60px] flex flex-col items-center justify-center text-center p-3 rounded border border-dashed ${
+                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/30 text-zinc-600'
+                }`}>
+                  <span className="text-[10px] font-mono uppercase font-bold tracking-wider">Sin directivas mañana</span>
+                </div>
+              ) : (
+                activeDirectivesManana.map(item => (
+                  <div 
+                    key={item.id} 
+                    className={`border p-2 rounded flex flex-col gap-1 transition shadow-xs ${
+                      isLight 
+                        ? 'bg-slate-50 border-slate-200' 
+                        : 'bg-[#141418] border-zinc-850'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className={`font-bold uppercase tracking-wider text-[10px] font-mono ${
+                        isLight ? 'text-slate-700' : 'text-zinc-400'
+                      }`}>{item.displayName}</span>
+                      {item.time && (
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                          isLight 
+                            ? 'bg-slate-200 text-slate-800 border border-slate-300' 
+                            : 'bg-zinc-900 border border-zinc-700 text-zinc-300'
+                        }`}>
+                          <Clock size={9} /> {item.time} hs
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-[11px] font-medium leading-snug ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
+                      {item.requirements}
+                    </p>
+                  </div>
+                ))
+              )}
+            </AutoScrollBox>
+          </div>
+        </div>
       </div>
 
-      {/* Discrepancy Note if present */}
-      {evt.aiAnalysis?.has_discrepancy && (
-        <div className={`text-[10px] font-mono font-medium px-2 py-1 rounded flex items-center gap-1.5 ${
-          isLight ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-amber-950/40 text-amber-300 border border-amber-900/60'
-        }`}>
-          <AlertCircle size={12} className="flex-shrink-0 text-amber-500" />
-          <span className="leading-tight">{evt.aiAnalysis.explanation || `En texto: ${evt.aiAnalysis.event_real_time}`}</span>
+      {/* BOTTOM HALF: OBSERVACIONES */}
+      <div className={`flex-1 min-h-0 flex flex-col border-t pt-2.5 ${isLight ? 'border-slate-200' : 'border-[#19191D]'}`}>
+        <div className="flex justify-between items-center pb-1.5 mb-1.5 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Activity size={14} className={isLight ? 'text-[#940028]' : 'text-zinc-400'} />
+            <h2 className={`text-xs font-bold tracking-widest uppercase ${isLight ? 'text-[#940028]' : 'text-zinc-400'}`}>
+              OBSERVACIONES
+            </h2>
+          </div>
+          <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>ESTADO GENERAL</span>
         </div>
-      )}
 
-      {/* Title */}
-      <h4 className={`text-xs sm:text-[13px] font-bold leading-snug group-hover:text-[#940028] transition-colors ${
-        isLight ? 'text-slate-900' : 'text-white'
-      }`}>
-        {evt.title}
-      </h4>
+        <AutoScrollBox 
+          className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1 max-h-[220px] md:max-h-none"
+          dependencies={[observations]}
+          speed={0.3}
+          pauseFrames={150}
+        >
+          {observations.length === 0 ? (
+            <div className={`h-full min-h-[50px] flex items-center justify-center text-[10px] font-mono gap-2 py-2 px-3 rounded border border-dashed ${
+              isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/30 text-zinc-500'
+            }`}>
+              <CheckCircle2 size={14} className="text-emerald-500/70" />
+              <span className="uppercase font-bold tracking-wider">Operación Normal - Sin Observaciones</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 content-start">
+              {observations.map(obs => (
+                <div 
+                  key={obs.id} 
+                  className={`border px-2.5 py-1.5 rounded flex items-center gap-2 text-[10px] font-medium transition ${
+                    obs.severity === 'danger' 
+                      ? isLight 
+                        ? 'border-red-300 text-red-800 bg-red-50 shadow-xs' 
+                        : 'border-red-955 text-red-400 bg-red-950/15' 
+                      : obs.severity === 'warning' 
+                        ? isLight 
+                          ? 'border-amber-300 text-amber-800 bg-amber-50 shadow-xs' 
+                          : 'border-amber-955 text-amber-400 bg-amber-950/15' 
+                        : isLight 
+                          ? 'border-slate-200 text-slate-800 bg-slate-100 shadow-xs' 
+                          : 'border-[#19191D] text-zinc-300 bg-[#141418]'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    obs.severity === 'danger' ? 'bg-red-500 animate-pulse' : obs.severity === 'warning' ? 'bg-amber-500' : isLight ? 'bg-slate-400' : 'bg-zinc-400'
+                  }`}></span>
+                  <span className="leading-snug">{obs.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </AutoScrollBox>
+      </div>
+    </section>
+  );
 
-      {/* Equipment tags */}
-      {evt.aiAnalysis?.equipment_tags && evt.aiAnalysis.equipment_tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-0.5">
-          {evt.aiAnalysis.equipment_tags.map((tag, tagIdx) => (
-            <span 
-              key={tagIdx}
-              className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
-                isLight ? 'bg-slate-50 text-slate-700 border-slate-200' : 'bg-zinc-900 text-zinc-300 border-zinc-800'
+  // BLOCK 3: CALENDARIO MENSUAL
+  const renderBlockMensual = (extraClass = '') => (
+    <section 
+      className={`hidden md:flex w-full h-full min-w-0 min-h-0 overflow-hidden border rounded-lg p-3 sm:p-4 flex-col transition-colors duration-300 ${extraClass} ${
+        isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+      }`}
+    >
+      {/* Header con Nombre del Mes en Mayúsculas */}
+      <div className="flex items-center justify-between border-b pb-2 mb-2 flex-shrink-0 gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <CalendarIcon size={14} className={isLight ? 'text-[#940028]' : 'text-red-400 flex-shrink-0'} />
+          <h2 className={`text-xs font-black tracking-widest font-mono uppercase truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
+            {calendarData.currentMonthName} {calendarData.currentYear}
+          </h2>
+        </div>
+        <span className={`text-[9px] font-mono px-2 py-0.5 rounded flex-shrink-0 whitespace-nowrap ${
+          isLight ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+        }`}>
+          {calendarData.monthEvents.length} EVENTOS
+        </span>
+      </div>
+
+      {/* Días de la semana (Lunes a Domingo) */}
+      <div className="grid grid-cols-7 gap-1 text-center font-mono text-[10px] font-bold py-1 border-b mb-1.5 flex-shrink-0">
+        {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'].map(d => (
+          <span key={d} className={isLight ? 'text-slate-600' : 'text-zinc-400'}>
+            {d.slice(0, 3).toUpperCase()}
+          </span>
+        ))}
+      </div>
+
+      {/* Grilla de Celdas del Mes (35 celdas = 5 semanas x 7 días) */}
+      <div className="grid grid-cols-7 grid-rows-5 gap-1.5 flex-grow min-h-0 overflow-hidden">
+        {monthGrid.map((cell, idx) => {
+          const hasEvents = cell.events && cell.events.length > 0;
+
+          return (
+            <div 
+              key={idx}
+              className={`relative p-1 sm:p-1.5 rounded flex flex-col justify-between border transition-all overflow-hidden min-h-0 ${
+                !cell.isCurrentMonth
+                  ? isLight ? 'bg-slate-50/50 border-slate-100 text-slate-300 opacity-60' : 'bg-zinc-950/40 border-zinc-900 text-zinc-700 opacity-40'
+                  : cell.isToday
+                    ? isLight 
+                      ? 'bg-[#940028]/10 border-[#940028] text-slate-900 shadow-sm ring-1 ring-[#940028]/40' 
+                      : 'bg-[#940028]/20 border-[#940028] text-white shadow-sm ring-1 ring-[#940028]/60'
+                    : hasEvents
+                      ? isLight ? 'bg-slate-50/80 border-slate-200 hover:border-slate-300' : 'bg-[#141418] border-zinc-850 hover:border-zinc-700'
+                      : isLight ? 'bg-white border-slate-100' : 'bg-[#101014] border-zinc-900'
               }`}
             >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
+              {/* Número de día */}
+              <div className="flex justify-between items-center flex-shrink-0 leading-none">
+                <span className={`text-[10.5px] font-mono font-bold leading-none ${
+                  cell.isToday 
+                    ? isLight ? 'text-[#940028] bg-white px-1 py-0.5 rounded shadow-2xs font-extrabold' : 'text-white bg-[#940028] px-1 py-0.5 rounded shadow-2xs' 
+                    : cell.isCurrentMonth ? (isLight ? 'text-slate-700' : 'text-zinc-300') : (isLight ? 'text-slate-400' : 'text-zinc-600')
+                }`}>
+                  {String(cell.day).padStart(2, '0')}
+                </span>
 
-      {/* Description Snippet */}
-      {evt.description && (
-        <p className={`text-[11px] line-clamp-2 leading-tight ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
-          {evt.description}
-        </p>
-      )}
+                {cell.isToday && (
+                  <span className={`text-[7.5px] font-mono font-bold uppercase tracking-wider ${
+                    isLight ? 'text-[#940028]' : 'text-red-300'
+                  }`}>
+                    HOY
+                  </span>
+                )}
+              </div>
 
-      {/* Tap hint for mobile & desktop */}
-      <div className={`pt-1 border-t border-dashed flex items-center justify-between text-[10px] font-mono ${
-        isLight ? 'border-slate-200 text-slate-500' : 'border-zinc-800 text-zinc-500'
-      }`}>
-        <span className="text-[#940028] font-bold group-hover:underline flex items-center gap-0.5">
-          Ver requerimientos completos <ChevronRight size={11} />
-        </span>
-        <span className="text-[9px] opacity-70">Tocar para abrir</span>
+              {/* Pills / Eventos dentro del día */}
+              <div className="flex flex-col gap-0.5 mt-0.5 overflow-hidden flex-1 min-h-0 justify-end">
+                {hasEvents && cell.events.slice(0, 1).map((ev, evIdx) => (
+                  <div 
+                    key={evIdx}
+                    onClick={() => setSelectedTicketModal(ev)}
+                    title={`${ev.timeStr} ${ev.title}`}
+                    className={`text-[8.5px] font-mono truncate px-1 py-0.5 rounded leading-tight border cursor-pointer ${
+                      cell.isToday
+                        ? isLight 
+                          ? 'bg-[#940028] text-white border-[#7d0022] font-semibold' 
+                          : 'bg-[#7d0022] text-white border-[#940028]'
+                        : isLight
+                          ? 'bg-sky-50 text-sky-900 border-sky-200 hover:bg-sky-100'
+                          : 'bg-sky-950/60 text-sky-300 border-sky-900/60 hover:bg-sky-900/60'
+                    }`}
+                  >
+                    <span className="font-bold mr-0.5">{ev.timeStr}</span> {ev.title}
+                  </div>
+                ))}
+
+                {cell.events.length > 1 && (
+                  <span className={`text-[7.5px] font-mono text-center font-bold ${isLight ? 'text-slate-500' : 'text-zinc-500'}`}>
+                    +{cell.events.length - 1} más
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </section>
+  );
+
+  // BLOCK 1: EVENTOS HOY & MAÑANA (OUTLOOK HELPDESK)
+  const renderBlockHoyManana = (extraClass = '') => {
+    const hasTodayEvents = calendarData.todayEvents && calendarData.todayEvents.length > 0;
+    const hasTomorrowEvents = calendarData.tomorrowEvents && calendarData.tomorrowEvents.length > 0;
+
+    return (
+      <section 
+        className={`w-full h-full min-w-0 min-h-0 overflow-hidden border rounded-lg p-3 sm:p-3.5 flex flex-col gap-2.5 sm:gap-3 transition-colors duration-300 ${extraClass} ${
+          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+        }`}
+      >
+        {/* CASE 1: HOY HAS NO EVENTS, BUT MAÑANA HAS EVENTS -> COLLAPSE HOY TO A SLEEK HEADER! */}
+        {!hasTodayEvents && hasTomorrowEvents ? (
+          <>
+            {/* Collapsed Hoy Banner */}
+            <div className={`px-3 py-2 rounded-lg border flex items-center justify-between flex-shrink-0 ${
+              isLight ? 'bg-slate-50/80 border-slate-200 text-slate-700' : 'bg-[#121216] border-zinc-850 text-zinc-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-300' : 'bg-zinc-600'}`}></span>
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
+                  HOY - {todayHeaderDate}
+                </span>
+              </div>
+              <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded ${
+                isLight ? 'bg-slate-100 text-slate-500' : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+              }`}>
+                0 EVENTOS HOY
+              </span>
+            </div>
+
+            {/* Tomorrow Expands into Full Height */}
+            <div className="flex-1 min-h-0 flex flex-col pt-0.5">
+              <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
+                isLight ? 'border-slate-200' : 'border-[#19191D]'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#940028] animate-pulse"></span>
+                  <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    MAÑANA - {tomorrowHeaderDate}
+                  </h3>
+                </div>
+                <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
+                  isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300 border border-[#940028]/40'
+                }`}>
+                  {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                </span>
+              </div>
+
+              <AutoScrollBox 
+                className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
+                dependencies={[calendarData.tomorrowEvents]}
+                speed={0.3}
+                pauseFrames={150}
+              >
+                {calendarData.tomorrowEvents.map(evt => renderEventCard(evt))}
+              </AutoScrollBox>
+            </div>
+          </>
+        ) : hasTodayEvents && !hasTomorrowEvents ? (
+          /* CASE 2: HOY HAS EVENTS, MAÑANA HAS NO EVENTS -> EXPAND HOY, COLLAPSE MAÑANA */
+          <>
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
+                isLight ? 'border-slate-200' : 'border-[#19191D]'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#940028] animate-pulse"></span>
+                  <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    HOY - {todayHeaderDate}
+                  </h3>
+                </div>
+                <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
+                  isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300 border border-[#940028]/40'
+                }`}>
+                  {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                </span>
+              </div>
+
+              <AutoScrollBox 
+                className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
+                dependencies={[calendarData.todayEvents]}
+                speed={0.3}
+                pauseFrames={150}
+              >
+                {calendarData.todayEvents.map(evt => renderEventCard(evt))}
+              </AutoScrollBox>
+            </div>
+
+            {/* Collapsed Tomorrow Banner */}
+            <div className={`px-3 py-2 rounded-lg border flex items-center justify-between flex-shrink-0 ${
+              isLight ? 'bg-slate-50/80 border-slate-200 text-slate-700' : 'bg-[#121216] border-zinc-850 text-zinc-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-300' : 'bg-zinc-600'}`}></span>
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
+                  MAÑANA - {tomorrowHeaderDate}
+                </span>
+              </div>
+              <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded ${
+                isLight ? 'bg-slate-100 text-slate-500' : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
+              }`}>
+                0 EVENTOS MAÑANA
+              </span>
+            </div>
+          </>
+        ) : (
+          /* CASE 3: BOTH HAVE EVENTS (OR BOTH HAVE 0 EVENTS) -> BALANCED SPLIT */
+          <>
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
+                isLight ? 'border-slate-200' : 'border-[#19191D]'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#940028] animate-pulse"></span>
+                  <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    HOY - {todayHeaderDate}
+                  </h3>
+                </div>
+                <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
+                  hasTodayEvents 
+                    ? isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300 border border-[#940028]/40'
+                    : isLight ? 'text-slate-400' : 'text-zinc-500'
+                }`}>
+                  {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                </span>
+              </div>
+
+              <AutoScrollBox 
+                className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
+                dependencies={[calendarData.todayEvents]}
+                speed={0.3}
+                pauseFrames={150}
+              >
+                {!hasTodayEvents ? (
+                  <div className={`h-full flex flex-col items-center justify-center text-center p-4 rounded border border-dashed ${
+                    isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
+                  }`}>
+                    <CalendarIcon size={20} className="mb-1 opacity-40" />
+                    <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS HOY</span>
+                  </div>
+                ) : (
+                  calendarData.todayEvents.map(evt => renderEventCard(evt))
+                )}
+              </AutoScrollBox>
+            </div>
+
+            <div className={`flex-1 min-h-0 flex flex-col border-t pt-2.5 ${
+              isLight ? 'border-slate-200' : 'border-[#19191D]'
+            }`}>
+              <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
+                isLight ? 'border-slate-200' : 'border-[#19191D]'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
+                  <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-700' : 'text-zinc-300'}`}>
+                    MAÑANA - {tomorrowHeaderDate}
+                  </h3>
+                </div>
+                <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
+                  hasTomorrowEvents 
+                    ? isLight ? 'bg-slate-100 text-slate-700' : 'bg-zinc-850 text-zinc-300'
+                    : isLight ? 'text-slate-400' : 'text-zinc-500'
+                }`}>
+                  {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                </span>
+              </div>
+
+              <AutoScrollBox 
+                className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
+                dependencies={[calendarData.tomorrowEvents]}
+                speed={0.3}
+                pauseFrames={150}
+                staggerMs={300}
+              >
+                {!hasTomorrowEvents ? (
+                  <div className={`h-full flex flex-col items-center justify-center text-center p-4 rounded border border-dashed ${
+                    isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
+                  }`}>
+                    <CalendarIcon size={20} className="mb-1 opacity-40" />
+                    <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS MAÑANA</span>
+                  </div>
+                ) : (
+                  calendarData.tomorrowEvents.map(evt => renderEventCard(evt))
+                )}
+              </AutoScrollBox>
+            </div>
+          </>
+        )}
+      </section>
+    );
+  };
+
+  // BLOCK 4: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL) - ADAPTATIVO
+  const renderBlockWeekly = (extraClass = '') => (
+    <section 
+      className={`relative z-10 border rounded-lg p-3 sm:p-3.5 flex flex-col min-h-0 h-full flex-shrink-0 transition-all duration-200 ${extraClass} ${
+        isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
+      }`}
+    >
+      <AdaptiveWeeklyCalendar 
+        events={events} 
+        isLight={isLight}
+        isFourDayMode={isFourDayMode}
+        onToggleFourDayMode={handleToggleFourDayMode}
+      />
+    </section>
   );
 
   return (
@@ -786,521 +1350,72 @@ export default function Tv2DashboardPage() {
           </div>
         </div>
 
-        <div className="flex justify-end items-center">
+        <div className="flex items-center gap-3">
           <HeaderClock isLight={isLight} />
         </div>
       </header>
 
-      {/* MAIN LAYOUT: MOBILE-FIRST FLEX ORDER VS DESKTOP 12-COLUMN GRID */}
-      <div className="relative z-10 flex flex-col md:grid md:grid-cols-12 gap-3.5 sm:gap-4 md:flex-grow md:h-0 md:min-h-0">
-        
-        {/* ========================================================================= */}
-        {/* BLOCK 1: EVENTOS HOY & MAÑANA                                              */}
-        {/* MOBILE: 1ER LUGAR (order-1) | DESKTOP: 3ER LUGAR (md:order-3, col-span-3)   */}
-        {/* ========================================================================= */}
-        <section className={`order-1 md:order-3 col-span-12 md:col-span-3 border rounded-lg p-3.5 sm:p-4 flex flex-col gap-3.5 sm:gap-4 md:h-full md:min-h-0 transition-colors duration-300 ${
-          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
-        }`}>
-          
-          {/* HOY - EVENTOS OUTLOOK */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
-              isLight ? 'border-slate-200' : 'border-[#19191D]'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#940028] animate-pulse"></span>
-                <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                  HOY - {todayHeaderDate}
-                </h3>
-              </div>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
-                calendarData.todayEvents.length > 0 
-                  ? isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300'
-                  : isLight ? 'text-slate-400' : 'text-zinc-500'
-              }`}>
-                {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
-              </span>
-            </div>
-
-            {/* Event list: AutoScroll on desktop, comfortable touch-scroll on mobile */}
-            <AutoScrollBox 
-              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5 pr-0.5 max-h-[380px] md:max-h-none"
-              dependencies={[calendarData.todayEvents]}
-              speed={0.35}
-              pauseFrames={140}
-            >
-              {calendarData.todayEvents.length === 0 ? (
-                <div className={`h-full flex flex-col items-center justify-center text-center p-6 rounded border border-dashed ${
-                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
-                }`}>
-                  <CalendarIcon size={22} className="mb-1.5 opacity-40" />
-                  <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS PROGRAMADOS HOY</span>
-                </div>
-              ) : (
-                calendarData.todayEvents.map(evt => renderEventCard(evt))
-              )}
-            </AutoScrollBox>
+      {/* MAIN WORKSPACE CONTAINER (CSS GRID: 30% Directivas, 1fr Mensual, 28% Hoy/Mañana) */}
+      {isDesktop ? (
+        <div 
+          ref={mainContainerRef}
+          className="relative z-10 flex-grow h-0 min-h-0 overflow-hidden select-none grid gap-3.5 sm:gap-4"
+          style={{
+            gridTemplateColumns: '30% minmax(0, 1fr) 28%',
+            gridTemplateRows: 'minmax(0, 1.75fr) minmax(0, 1fr)',
+          }}
+        >
+          {/* BLOCK 2: DIRECTIVAS & OBSERVACIONES (Col 1, Row 1 -> EXACTLY 30% SCREEN WIDTH!) */}
+          <div 
+            className="min-h-0 min-w-0 flex items-stretch overflow-hidden"
+            style={{ gridColumn: '1 / 2', gridRow: '1 / 2' }}
+          >
+            {renderBlockDirectivas('w-full h-full')}
           </div>
 
-          {/* MAÑANA - EVENTOS OUTLOOK */}
-          <div className={`flex-1 min-h-0 flex flex-col border-t pt-3 ${
-            isLight ? 'border-slate-200' : 'border-[#19191D]'
-          }`}>
-            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${
-              isLight ? 'border-slate-200' : 'border-[#19191D]'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
-                <h3 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-700' : 'text-zinc-300'}`}>
-                  MAÑANA - {tomorrowHeaderDate}
-                </h3>
-              </div>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
-                calendarData.tomorrowEvents.length > 0 
-                  ? isLight ? 'bg-slate-100 text-slate-700' : 'bg-zinc-850 text-zinc-300'
-                  : isLight ? 'text-slate-400' : 'text-zinc-500'
-              }`}>
-                {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
-              </span>
-            </div>
-
-            <AutoScrollBox 
-              className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5 pr-0.5 max-h-[380px] md:max-h-none"
-              dependencies={[calendarData.tomorrowEvents]}
-              speed={0.35}
-              pauseFrames={140}
-              staggerMs={300}
-            >
-              {calendarData.tomorrowEvents.length === 0 ? (
-                <div className={`h-full flex flex-col items-center justify-center text-center p-6 rounded border border-dashed ${
-                  isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
-                }`}>
-                  <CalendarIcon size={22} className="mb-1.5 opacity-40" />
-                  <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS PROGRAMADOS MAÑANA</span>
-                </div>
-              ) : (
-                calendarData.tomorrowEvents.map(evt => renderEventCard(evt))
-              )}
-            </AutoScrollBox>
+          {/* BLOCK 3: CALENDARIO MENSUAL (Col 2, Row 1 -> takes center 1fr ~42%) */}
+          <div 
+            className="min-h-0 min-w-0 flex items-stretch overflow-hidden"
+            style={{ gridColumn: '2 / 3', gridRow: '1 / 2' }}
+          >
+            {renderBlockMensual('w-full h-full')}
           </div>
 
-        </section>
-
-        {/* ========================================================================= */}
-        {/* BLOCK 2: DIRECTIVAS & OBSERVACIONES                                       */}
-        {/* MOBILE: 2DO LUGAR (order-2) | DESKTOP: 1ER LUGAR (md:order-1, col-span-4)   */}
-        {/* ========================================================================= */}
-        <section className={`order-2 md:order-1 col-span-12 md:col-span-4 border rounded-lg p-3.5 sm:p-4 flex flex-col gap-3 md:h-full md:min-h-0 transition-colors duration-300 ${
-          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
-        }`}>
-          
-          {/* TOP HALF: DIRECTIVAS */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <div className={`flex justify-between items-center border-b pb-2 mb-2 flex-shrink-0 ${isLight ? 'border-slate-200' : 'border-[#19191D]'}`}>
-              <h2 className={`text-xs font-bold tracking-widest uppercase ${isLight ? 'text-[#940028]' : 'text-zinc-400'}`}>DIRECTIVAS</h2>
-              <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>HOY + MAÑANA</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5 flex-grow min-h-0 overflow-hidden">
-              
-              {/* HOY Column */}
-              <div className="flex flex-col gap-1.5 h-full min-h-0">
-                <div className={`px-2.5 py-1 rounded flex items-center gap-1.5 flex-shrink-0 border ${
-                  isLight ? 'bg-[#940028]/10 border-[#940028]/30' : 'bg-[#141418] border-[#940028]/50'
-                }`}>
-                  <span className="w-2 h-2 rounded-full bg-[#940028]"></span>
-                  <span className={`text-[10px] font-bold tracking-wide ${isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'}`}>HOY</span>
-                </div>
-                
-                <AutoScrollBox 
-                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 max-h-[260px] md:max-h-none"
-                  dependencies={[activeDirectivesHoy]}
-                  speed={0.35}
-                  pauseFrames={140}
-                >
-                  {activeDirectivesHoy.length === 0 ? (
-                    <div className={`h-full flex items-center justify-center text-[10px] font-mono text-center py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
-                      SIN DIRECTIVAS ACTIVAS
-                    </div>
-                  ) : (
-                    activeDirectivesHoy.map(item => (
-                      <div 
-                        key={item.id} 
-                        className={`border p-2 rounded flex flex-col gap-1 transition shadow-xs ${
-                          isLight 
-                            ? 'bg-slate-50 border-slate-200 hover:border-[#940028]/40' 
-                            : 'bg-[#141418] border-zinc-850'
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className={`font-bold uppercase tracking-wider text-[10px] font-mono ${
-                            isLight ? 'text-[#940028]' : 'text-[#f1a3b3]'
-                          }`}>{item.displayName}</span>
-                          {item.time && (
-                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                              isLight 
-                                ? 'bg-[#940028] text-white border border-[#7d0022]' 
-                                : 'bg-[#4d0015] border border-[#7d0022] text-[#f8ccd5]'
-                            }`}>
-                              <Clock size={9} /> {item.time} hs
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-[11px] font-medium leading-snug ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
-                          {item.requirements}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </AutoScrollBox>
-              </div>
-
-              {/* MAÑANA Column */}
-              <div className="flex flex-col gap-1.5 h-full min-h-0">
-                <div className={`px-2.5 py-1 rounded flex items-center gap-1.5 flex-shrink-0 border ${
-                  isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#141418] border-[#19191D]'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isLight ? 'bg-slate-400' : 'bg-zinc-500'}`}></span>
-                  <span className={`text-[10px] font-bold tracking-wide ${isLight ? 'text-slate-700' : 'text-zinc-400'}`}>MAÑANA</span>
-                </div>
-                
-                <AutoScrollBox 
-                  className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 max-h-[260px] md:max-h-none"
-                  dependencies={[activeDirectivesManana]}
-                  speed={0.35}
-                  pauseFrames={140}
-                  staggerMs={300}
-                >
-                  {activeDirectivesManana.length === 0 ? (
-                    <div className={`h-full flex items-center justify-center text-[10px] font-mono text-center py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
-                      SIN DIRECTIVAS ACTIVAS
-                    </div>
-                  ) : (
-                    activeDirectivesManana.map(item => (
-                      <div 
-                        key={item.id} 
-                        className={`border p-2 rounded flex flex-col gap-1 transition shadow-xs ${
-                          isLight 
-                            ? 'bg-slate-50 border-slate-200' 
-                            : 'bg-[#141418] border-zinc-850'
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className={`font-bold uppercase tracking-wider text-[10px] font-mono ${
-                            isLight ? 'text-slate-700' : 'text-zinc-400'
-                          }`}>{item.displayName}</span>
-                          {item.time && (
-                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                              isLight 
-                                ? 'bg-slate-200 text-slate-800 border border-slate-300' 
-                                : 'bg-zinc-900 border border-zinc-700 text-zinc-300'
-                            }`}>
-                              <Clock size={9} /> {item.time} hs
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-[11px] font-medium leading-snug ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
-                          {item.requirements}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </AutoScrollBox>
-              </div>
-
-            </div>
+          {/* BLOCK 1: EVENTOS HOY & MAÑANA (Col 3 -> 28% width; in 4-day mode spans Row 1 & Row 2 full height!) */}
+          <div 
+            className="min-h-0 min-w-0 flex items-stretch overflow-hidden"
+            style={{ 
+              gridColumn: '3 / 4', 
+              gridRow: isFourDayMode ? '1 / 3' : '1 / 2' 
+            }}
+          >
+            {renderBlockHoyManana('w-full h-full')}
           </div>
 
-          {/* BOTTOM HALF: OBSERVACIONES */}
-          <div className={`flex-1 min-h-0 flex flex-col border-t pt-2.5 ${isLight ? 'border-slate-200' : 'border-[#19191D]'}`}>
-            <div className="flex justify-between items-center pb-1.5 mb-1.5 flex-shrink-0">
-              <h2 className={`text-xs font-bold tracking-widest uppercase ${isLight ? 'text-[#940028]' : 'text-zinc-400'}`}>OBSERVACIONES</h2>
-              <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>ESTADO GENERAL</span>
-            </div>
-
-            <AutoScrollBox 
-              className="overflow-y-auto no-scrollbar flex-grow min-h-0 pr-1 max-h-[220px] md:max-h-none"
-              dependencies={[observations]}
-              speed={0.3}
-              pauseFrames={150}
-            >
-              {observations.length === 0 ? (
-                <div className={`h-full flex items-center justify-center text-[10px] font-mono gap-2 py-4 ${isLight ? 'text-slate-400' : 'text-zinc-600'}`}>
-                  <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-slate-300' : 'bg-zinc-700'}`}></span>
-                  SIN OBSERVACIONES NI EVENTOS DE ALERTA
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2 content-start">
-                  {observations.map(obs => (
-                    <div 
-                      key={obs.id} 
-                      className={`border px-2.5 py-1.5 rounded flex items-center gap-2 text-[10px] font-medium transition ${
-                        obs.severity === 'danger' 
-                          ? isLight 
-                            ? 'border-red-300 text-red-800 bg-red-50 shadow-xs' 
-                            : 'border-red-955 text-red-400 bg-red-950/15' 
-                          : obs.severity === 'warning' 
-                            ? isLight 
-                              ? 'border-amber-300 text-amber-800 bg-amber-50 shadow-xs' 
-                              : 'border-amber-955 text-amber-400 bg-amber-950/15' 
-                            : isLight 
-                              ? 'border-slate-200 text-slate-800 bg-slate-100 shadow-xs' 
-                              : 'border-[#19191D] text-zinc-300 bg-[#141418]'
-                      }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        obs.severity === 'danger' ? 'bg-red-500 animate-pulse' : obs.severity === 'warning' ? 'bg-amber-500' : isLight ? 'bg-slate-400' : 'bg-zinc-400'
-                      }`}></span>
-                      <span className="leading-snug">{obs.text}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </AutoScrollBox>
-          </div>
-
-        </section>
-
-        {/* ========================================================================= */}
-        {/* BLOCK 3: CALENDARIO MENSUAL ("SEPTIEMBRE 2026")                           */}
-        {/* MOBILE: OCULTO (hidden) | DESKTOP: MOSTRADO (md:flex, md:order-2, col-5)   */}
-        {/* ========================================================================= */}
-        <section className={`hidden md:flex order-last md:order-2 md:col-span-5 border rounded-lg p-4 flex-col h-full min-h-0 transition-colors duration-300 ${
-          isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
-        }`}>
-          
-          {/* Header con Nombre del Mes en Mayúsculas */}
-          <div className="flex items-center justify-between border-b pb-2 mb-2 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <CalendarIcon size={14} className={isLight ? 'text-[#940028]' : 'text-red-400'} />
-              <h2 className={`text-xs font-black tracking-widest font-mono uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                {calendarData.currentMonthName} {calendarData.currentYear}
-              </h2>
-            </div>
-            <span className={`text-[9px] font-mono px-2 py-0.5 rounded ${
-              isLight ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
-            }`}>
-              {calendarData.monthEvents.length} EVENTOS EN EL MES
-            </span>
-          </div>
-
-          {/* Días de la semana (Lunes a Domingo) */}
-          <div className="grid grid-cols-7 gap-1 text-center font-mono text-[10px] font-bold py-1.5 border-b mb-1.5 flex-shrink-0">
-            {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'].map(d => (
-              <span key={d} className={isLight ? 'text-slate-600' : 'text-zinc-400'}>
-                {d.slice(0, 3).toUpperCase()}
-              </span>
-            ))}
-          </div>
-
-          {/* Grilla de Celdas del Mes (35 celdas = 5 semanas x 7 días) */}
-          <div className="grid grid-cols-7 grid-rows-5 gap-1.5 flex-grow min-h-0">
-            {monthGrid.map((cell, idx) => {
-              const hasEvents = cell.events && cell.events.length > 0;
-
-              return (
-                <div 
-                  key={idx}
-                  className={`relative p-1.5 rounded flex flex-col justify-between border transition-all overflow-hidden ${
-                    !cell.isCurrentMonth
-                      ? isLight ? 'bg-slate-50/50 border-slate-100 text-slate-300 opacity-60' : 'bg-zinc-950/40 border-zinc-900 text-zinc-700 opacity-40'
-                      : cell.isToday
-                        ? isLight 
-                          ? 'bg-[#940028]/10 border-[#940028] text-slate-900 shadow-sm ring-1 ring-[#940028]/40' 
-                          : 'bg-[#940028]/20 border-[#940028] text-white shadow-sm ring-1 ring-[#940028]/60'
-                        : hasEvents
-                          ? isLight ? 'bg-slate-50/80 border-slate-200 hover:border-slate-300' : 'bg-[#141418] border-zinc-850 hover:border-zinc-700'
-                          : isLight ? 'bg-white border-slate-100' : 'bg-[#101014] border-zinc-900'
-                  }`}
-                >
-                  {/* Número de día */}
-                  <div className="flex justify-between items-center">
-                    <span className={`text-[11px] font-mono font-bold leading-none ${
-                      cell.isToday 
-                        ? isLight ? 'text-[#940028] bg-white px-1 py-0.5 rounded shadow-2xs font-extrabold' : 'text-white bg-[#940028] px-1 py-0.5 rounded shadow-2xs' 
-                        : cell.isCurrentMonth ? (isLight ? 'text-slate-700' : 'text-zinc-300') : (isLight ? 'text-slate-400' : 'text-zinc-600')
-                    }`}>
-                      {String(cell.day).padStart(2, '0')}
-                    </span>
-
-                    {cell.isToday && (
-                      <span className={`text-[8px] font-mono font-bold uppercase tracking-wider ${
-                        isLight ? 'text-[#940028]' : 'text-red-300'
-                      }`}>
-                        HOY
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Pills / Eventos dentro del día */}
-                  <div className="flex flex-col gap-0.5 mt-0.5 overflow-hidden">
-                    {hasEvents ? (
-                      cell.events.slice(0, 2).map((ev, evIdx) => (
-                        <div 
-                          key={evIdx}
-                          onClick={() => setSelectedTicketModal(ev)}
-                          title={`${ev.timeStr} ${ev.title}`}
-                          className={`text-[9px] font-mono truncate px-1 py-0.5 rounded leading-tight border cursor-pointer ${
-                            cell.isToday
-                              ? isLight 
-                                ? 'bg-[#940028] text-white border-[#7d0022] font-semibold' 
-                                : 'bg-[#7d0022] text-white border-[#940028]'
-                              : isLight
-                                ? 'bg-sky-50 text-sky-900 border-sky-200 hover:bg-sky-100'
-                                : 'bg-sky-950/60 text-sky-300 border-sky-900/60 hover:bg-sky-900/60'
-                          }`}
-                        >
-                          <span className="font-bold mr-0.5">{ev.timeStr}</span> {ev.title}
-                        </div>
-                      ))
-                    ) : null}
-
-                    {cell.events.length > 2 && (
-                      <span className={`text-[8px] font-mono text-center font-bold ${isLight ? 'text-slate-500' : 'text-zinc-500'}`}>
-                        +{cell.events.length - 2} más
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-        </section>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* BLOCK 4: ALMANAQUE FIJO (SOLICITUDES FIJAS SEMANAL)                       */}
-      {/* MOBILE: 3ER LUGAR (order-3) con selector diario | DESKTOP: 5 columnas      */}
-      {/* ========================================================================= */}
-      <section className={`relative z-10 border rounded-lg p-3.5 flex flex-col md:h-[30%] md:min-h-[200px] transition-colors duration-300 order-3 md:order-4 ${
-        isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#0e0e11] border-[#19191D]'
-      }`}>
-
-        {/* 1. DESKTOP VIEW: 5-Column Almanac Grid with AutoScroll */}
-        <div className="hidden md:grid md:grid-cols-5 gap-3 flex-grow overflow-hidden">
-          {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'].map((day, idx) => {
-            const dayEvents = getEventsForDay(day);
-
-            return (
-              <div 
-                key={day} 
-                className={`border rounded flex flex-col h-full overflow-hidden transition-colors ${
-                  isLight ? 'bg-slate-50/80 border-slate-200' : 'bg-zinc-950 border-[#19191D]'
-                }`}
-              >
-                {/* Column header */}
-                <div className={`border-b py-2 px-3 flex justify-between items-center flex-shrink-0 ${
-                  isLight ? 'bg-slate-100 border-slate-200' : 'bg-zinc-900 border-[#19191D]'
-                }`}>
-                  <span className={`text-[11px] font-bold uppercase tracking-wider font-mono ${
-                    isLight ? 'text-slate-800' : 'text-zinc-200'
-                  }`}>{day}</span>
-                  <span className={`text-[9px] font-mono ${isLight ? 'text-slate-400' : 'text-zinc-500'}`}>
-                    0{day === 'Lunes' ? 1 : day === 'Martes' ? 2 : day === 'Miercoles' ? 3 : day === 'Jueves' ? 4 : 5}
-                  </span>
-                </div>
-
-                {/* Column Events body with AutoScroll */}
-                {dayEvents.length === 0 ? (
-                  <div className={`text-[10px] font-mono text-center py-6 uppercase tracking-wider flex-grow flex items-center justify-center ${
-                    isLight ? 'text-slate-400' : 'text-zinc-600'
-                  }`}>
-                    SIN EVENTOS
-                  </div>
-                ) : (
-                  <DailyEventsList events={dayEvents} isLight={isLight} staggerMs={idx * 200} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* 2. MOBILE VIEW: Daily View defaulting to today's day (e.g. Jueves) + Day Selector Tabs */}
-        <div className="md:hidden flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b pb-2">
-            <h3 className={`text-xs font-bold uppercase tracking-wider font-mono ${isLight ? 'text-slate-800' : 'text-zinc-200'}`}>
-              SOLICITUDES SEMANALES
-            </h3>
-            <span className="text-[10px] font-mono font-bold text-[#940028]">
-              {selectedMobileDay.toUpperCase()}
-            </span>
-          </div>
-
-          {/* Day Selector Pills */}
-          <div className={`grid grid-cols-5 gap-1.5 p-1 rounded-lg border ${
-            isLight ? 'bg-slate-100 border-slate-200' : 'bg-zinc-950 border-zinc-800'
-          }`}>
-            {['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'].map(d => {
-              const isSelected = selectedMobileDay.toLowerCase() === d.toLowerCase();
-              const isActualToday = currentDayName.toLowerCase() === d.toLowerCase();
-
-              return (
-                <button
-                  key={d}
-                  onClick={() => setSelectedMobileDay(d)}
-                  className={`py-2 px-1 rounded text-center font-mono text-xs font-bold transition flex flex-col items-center gap-0.5 cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#940028] text-white shadow-xs'
-                      : isLight 
-                        ? 'text-slate-600 hover:bg-slate-200/70' 
-                        : 'text-zinc-400 hover:bg-zinc-900'
-                  }`}
-                >
-                  <span>{d.slice(0, 3).toUpperCase()}</span>
-                  {isActualToday ? (
-                    <span className={`text-[8px] font-extrabold uppercase ${isSelected ? 'text-red-200' : 'text-[#940028]'}`}>
-                      • HOY
-                    </span>
-                  ) : (
-                    <span className="text-[8px] opacity-0">•</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Cards for selected mobile day */}
-          <div className="space-y-2 pt-1">
-            {getEventsForDay(selectedMobileDay).length === 0 ? (
-              <div className={`text-xs font-mono text-center py-8 uppercase tracking-wider rounded border border-dashed ${
-                isLight ? 'border-slate-200 bg-slate-50/50 text-slate-400' : 'border-zinc-850 bg-zinc-950/40 text-zinc-600'
-              }`}>
-                SIN SOLICITUDES PARA EL {selectedMobileDay.toUpperCase()}
-              </div>
-            ) : (
-              getEventsForDay(selectedMobileDay).map(evt => (
-                <div 
-                  key={evt.id} 
-                  className={`p-3.5 rounded-lg border flex flex-col gap-1.5 shadow-xs ${
-                    isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#141418] border-zinc-850 text-white'
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className={`text-xs font-bold font-mono ${isLight ? 'text-[#940028]' : 'text-red-400'}`}>
-                      {evt.time_range}
-                    </span>
-                    <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
-                      isLight ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
-                    }`}>
-                      {selectedMobileDay.toUpperCase()}
-                    </span>
-                  </div>
-                  <h4 className={`text-sm font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                    {evt.title}
-                  </h4>
-                  {evt.description && (
-                    <p className={`text-xs leading-relaxed mt-0.5 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
-                      {evt.description}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
+          {/* BLOCK 4: ADAPTIVE WEEKLY CALENDAR (Row 2; in 4-day mode spans Col 1 & Col 2 (72% width); in 5-day mode spans Col 1 to Col 3 (100% width)) */}
+          <div 
+            className="min-h-0 min-w-0 flex items-stretch overflow-hidden"
+            style={{ 
+              gridColumn: isFourDayMode ? '1 / 3' : '1 / 4', 
+              gridRow: '2 / 3' 
+            }}
+          >
+            {renderBlockWeekly('w-full h-full')}
           </div>
         </div>
-
-      </section>
+      ) : (
+        /* ========================================================================= */
+        /* MOBILE LAYOUT: Vertical stacked with comfortable touch-scrolling          */
+        /* ========================================================================= */
+        <div 
+          ref={mainContainerRef}
+          className="relative z-10 flex flex-col flex-grow overflow-y-auto gap-3.5 sm:gap-4 select-none"
+        >
+          {renderBlockHoyManana('order-1')}
+          {renderBlockDirectivas('order-2')}
+          {renderBlockWeekly('order-3')}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* INTERACTIVE TICKET DETAILS MODAL / BOTTOM SHEET (FOR MOBILE & DESKTOP)    */}
