@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { analyzeTicketWithGemini } from '@/lib/geminiParser';
+import { supabase } from '@/lib/supabaseClient';
 
 const DEFAULT_CALENDAR_URL = 'https://outlook.office365.com/owa/calendar/433a34896a4545739e21cff1bd39ac26@ucema.edu.ar/2d9d26876dd440a3a4d723c6fe0b29175286550549318340919/calendar.ics';
 
@@ -128,6 +129,47 @@ export async function GET() {
 
     const icsText = await response.text();
     const allEvents = parseICS(icsText);
+
+    // Fetch CeNem events from Supabase if table exists
+    try {
+      const { data: dbCenems } = await supabase.from('cenem_events').select('*');
+      if (dbCenems && dbCenems.length > 0) {
+        dbCenems.forEach(c => {
+          if (c.event_date) {
+            const [y, m, d] = c.event_date.split('-').map(Number);
+            const isCancelled = c.status === 'cancelled';
+            const equipmentTags = ['CeNem'];
+            if (c.applicant) equipmentTags.push(`Docente: ${c.applicant}`);
+            if (isCancelled) equipmentTags.unshift('CANCELADO');
+
+            allEvents.push({
+              id: `cenem_${c.id}`,
+              rawId: c.id,
+              isCeNem: true,
+              status: c.status || 'active',
+              title: c.title.toLowerCase().includes('cenem') ? c.title : `Laboratorio CeNem - ${c.title}`,
+              rawTitle: c.title,
+              description: c.requirements || (c.applicant ? `Solicitado por: ${c.applicant}` : ''),
+              location: 'CeNem',
+              dateStr: c.event_date,
+              timeStr: c.start_time,
+              endTimeStr: c.end_time || '',
+              year: y,
+              month: m,
+              day: d,
+              applicant: c.applicant || '',
+              requirements: c.requirements || '',
+              created_by_email: c.created_by_email || '',
+              aiAnalysis: {
+                equipment_tags: equipmentTags,
+                has_discrepancy: false,
+                event_real_time: c.start_time
+              }
+            });
+          }
+        });
+      }
+    } catch {}
 
     // Calculate Today & Tomorrow in Argentina local date
     const getLocalFormattedDate = (offsetDays = 0) => {

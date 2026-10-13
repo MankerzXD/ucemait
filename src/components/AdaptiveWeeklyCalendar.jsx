@@ -141,7 +141,8 @@ export default function AdaptiveWeeklyCalendar({
   bottomWidthPct = 100,
   setBottomWidthPct,
   isFourDayOverride = null,
-  setIsFourDayOverride
+  setIsFourDayOverride,
+  onEventClick = null
 }) {
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(1200);
@@ -229,37 +230,61 @@ export default function AdaptiveWeeklyCalendar({
 
   // Helper to render event item according to dynamic density tier
   const renderAdaptiveEvent = (evt, isHighlight = false) => {
+    const isCancelled = evt.status === 'cancelled';
+    const isCeNem = evt.isCeNem || (evt.location && evt.location.toLowerCase().includes('cenem'));
+
     if (density === 'micro') {
       return (
         <div 
           key={evt.id} 
+          onClick={() => onEventClick && onEventClick(evt)}
           className={`px-2 py-1 rounded flex items-center justify-between gap-1.5 border transition-all text-[10px] font-mono shadow-2xs ${
-            isHighlight
-              ? isLight
-                ? 'bg-red-50/90 border-[#940028]/40 text-slate-900 hover:border-[#940028]'
-                : 'bg-[#1b0d12] border-[#940028]/60 text-white hover:border-[#940028]'
-              : isLight 
-                ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-800' 
-                : 'bg-[#141418] border-zinc-800/80 hover:border-zinc-700 text-zinc-200'
+            onEventClick ? 'cursor-pointer active:scale-[0.99]' : ''
+          } ${
+            isCancelled
+              ? 'bg-zinc-950/70 border-red-950/60 opacity-60'
+              : isHighlight
+                ? isLight
+                  ? 'bg-red-50/90 border-[#940028]/40 text-slate-900 hover:border-[#940028]'
+                  : 'bg-[#1b0d12] border-[#940028]/60 text-white hover:border-[#940028]'
+                : isLight 
+                  ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-800' 
+                  : 'bg-[#141418] border-zinc-800/80 hover:border-zinc-700 text-zinc-200'
           }`}
         >
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <span className={`font-black flex-shrink-0 text-[10px] ${
-              isHighlight
-                ? isLight ? 'text-[#940028]' : 'text-red-400'
-                : isLight ? 'text-[#940028]' : 'text-red-400'
+              isCancelled
+                ? 'line-through text-zinc-500'
+                : isHighlight
+                  ? isLight ? 'text-[#940028]' : 'text-red-400'
+                  : isLight ? 'text-[#940028]' : 'text-red-400'
             }`}>
               {evt.time_range}
             </span>
-            <span className="font-semibold truncate text-[10.5px]">{evt.title}</span>
-          </div>
-          {isHighlight && (
-            <span className={`text-[8px] font-mono font-bold px-1 rounded flex-shrink-0 ${
-              isLight ? 'bg-[#940028] text-white' : 'bg-[#940028] text-white'
-            }`}>
-              HOY
+            <span className={`font-semibold truncate text-[10.5px] ${isCancelled ? 'line-through text-zinc-500' : ''}`}>
+              {evt.title}
             </span>
-          )}
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {isCeNem && (
+              <span className="text-[7.5px] font-mono font-bold px-1 rounded bg-[#940028] text-white">
+                CeNem
+              </span>
+            )}
+            {isCancelled && (
+              <span className="text-[7.5px] font-mono font-bold px-1 rounded bg-red-600 text-white">
+                CANCELADO
+              </span>
+            )}
+            {isHighlight && !isCancelled && (
+              <span className={`text-[8px] font-mono font-bold px-1 rounded flex-shrink-0 ${
+                isLight ? 'bg-[#940028] text-white' : 'bg-[#940028] text-white'
+              }`}>
+                HOY
+              </span>
+            )}
+          </div>
         </div>
       );
     }
@@ -268,33 +293,54 @@ export default function AdaptiveWeeklyCalendar({
       return (
         <div 
           key={evt.id} 
+          onClick={() => onEventClick && onEventClick(evt)}
           className={`p-2 rounded-lg flex flex-col gap-0.5 transition-all shadow-2xs border ${
-            isHighlight
-              ? isLight
-                ? 'bg-red-50/80 border-[#940028]/40 text-slate-900 hover:border-[#940028]'
-                : 'bg-[#1a0e13] border-[#940028]/60 text-white hover:border-[#940028]'
-              : isLight 
-                ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-800' 
-                : 'bg-[#141418] border-zinc-800/80 hover:border-zinc-700 text-zinc-200'
+            onEventClick ? 'cursor-pointer active:scale-[0.99]' : ''
+          } ${
+            isCancelled
+              ? 'bg-zinc-950/70 border-red-950/60 opacity-60'
+              : isHighlight
+                ? isLight
+                  ? 'bg-red-50/80 border-[#940028]/40 text-slate-900 hover:border-[#940028]'
+                  : 'bg-[#1a0e13] border-[#940028]/60 text-white hover:border-[#940028]'
+                : isLight 
+                  ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-800' 
+                  : 'bg-[#141418] border-zinc-800/80 hover:border-zinc-700 text-zinc-200'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className={`text-[10.5px] font-extrabold font-mono tracking-wide ${
-              isHighlight
-                ? isLight ? 'text-[#940028]' : 'text-red-400'
-                : isLight ? 'text-[#940028]' : 'text-red-400'
+              isCancelled
+                ? 'line-through text-zinc-500'
+                : isHighlight
+                  ? isLight ? 'text-[#940028]' : 'text-red-400'
+                  : isLight ? 'text-[#940028]' : 'text-red-400'
             }`}>
               {evt.time_range}
             </span>
-            {isHighlight && (
-              <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded ${
-                isLight ? 'bg-[#940028] text-white' : 'bg-[#940028] text-white'
-              }`}>
-                FIJO HOY
-              </span>
-            )}
+            <div className="flex items-center gap-1">
+              {isCeNem && (
+                <span className="text-[7.5px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#940028] text-white">
+                  CeNem
+                </span>
+              )}
+              {isCancelled && (
+                <span className="text-[7.5px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-600 text-white">
+                  CANCELADO
+                </span>
+              )}
+              {isHighlight && !isCancelled && (
+                <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                  isLight ? 'bg-[#940028] text-white' : 'bg-[#940028] text-white'
+                }`}>
+                  FIJO HOY
+                </span>
+              )}
+            </div>
           </div>
-          <h4 className={`text-[11px] font-bold leading-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
+          <h4 className={`text-[11px] font-bold leading-tight truncate ${
+            isCancelled ? 'line-through text-zinc-500' : isLight ? 'text-slate-900' : 'text-white'
+          }`}>
             {evt.title}
           </h4>
         </div>
@@ -305,40 +351,61 @@ export default function AdaptiveWeeklyCalendar({
     return (
       <div 
         key={evt.id} 
+        onClick={() => onEventClick && onEventClick(evt)}
         className={`p-2.5 sm:p-3 rounded-lg flex flex-col gap-1 transition-all duration-200 shadow-xs border ${
-          isHighlight
-            ? isLight
-              ? 'bg-red-50/80 border-red-200 text-slate-900 shadow-sm hover:border-[#940028]/60'
-              : 'bg-[#181216] border-[#940028]/50 text-white shadow-sm hover:border-[#940028]'
-            : isLight 
-              ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-800' 
-              : 'bg-[#141418] border-zinc-800/80 hover:border-zinc-700 text-white'
+          onEventClick ? 'cursor-pointer active:scale-[0.99]' : ''
+        } ${
+          isCancelled
+            ? 'bg-zinc-950/70 border-red-950/60 opacity-60'
+            : isHighlight
+              ? isLight
+                ? 'bg-red-50/80 border-red-200 text-slate-900 shadow-sm hover:border-[#940028]/60'
+                : 'bg-[#181216] border-[#940028]/50 text-white shadow-sm hover:border-[#940028]'
+              : isLight 
+                ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-800' 
+                : 'bg-[#141418] border-zinc-800/80 hover:border-zinc-700 text-white'
         }`}
       >
         <div className="flex items-center justify-between">
           <span className={`text-[11px] font-extrabold font-mono tracking-wide ${
-            isHighlight
-              ? isLight ? 'text-[#940028]' : 'text-red-400'
-              : isLight ? 'text-[#940028]' : 'text-red-400'
+            isCancelled
+              ? 'line-through text-zinc-500'
+              : isHighlight
+                ? isLight ? 'text-[#940028]' : 'text-red-400'
+                : isLight ? 'text-[#940028]' : 'text-red-400'
           }`}>
             {evt.time_range}
           </span>
-          {isHighlight && (
-            <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
-              isLight ? 'bg-[#940028] text-white' : 'bg-[#940028]/40 border border-[#940028]/60 text-red-200'
-            }`}>
-              FIJO HOY
-            </span>
-          )}
+          <div className="flex items-center gap-1">
+            {isCeNem && (
+              <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#940028] text-white">
+                CeNem
+              </span>
+            )}
+            {isCancelled && (
+              <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-600 text-white">
+                CANCELADO
+              </span>
+            )}
+            {isHighlight && !isCancelled && (
+              <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                isLight ? 'bg-[#940028] text-white' : 'bg-[#940028]/40 border border-[#940028]/60 text-red-200'
+              }`}>
+                FIJO HOY
+              </span>
+            )}
+          </div>
         </div>
 
-        <h4 className={`text-xs font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>
+        <h4 className={`text-xs font-bold leading-snug ${
+          isCancelled ? 'line-through text-zinc-500' : isLight ? 'text-slate-900' : 'text-white'
+        }`}>
           {evt.title}
         </h4>
 
         {evt.description && (
           <p className={`text-[11px] line-clamp-2 leading-tight mt-0.5 ${
-            isLight ? 'text-slate-600' : 'text-zinc-400'
+            isCancelled ? 'text-zinc-600' : isLight ? 'text-slate-600' : 'text-zinc-400'
           }`}>
             {evt.description}
           </p>

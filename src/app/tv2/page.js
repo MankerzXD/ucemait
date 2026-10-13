@@ -4,7 +4,8 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   Clock, ShieldAlert, Activity, Bell, X, Calendar as CalendarIcon, MapPin, 
-  Ticket, AlertCircle, ChevronRight, CheckCircle2, FileText, Layers
+  Ticket, AlertCircle, ChevronRight, CheckCircle2, FileText, Layers,
+  Edit3, Trash2, Ban, RefreshCw, Check, User
 } from 'lucide-react';
 import AdaptiveWeeklyCalendar from '@/components/AdaptiveWeeklyCalendar';
 
@@ -227,6 +228,133 @@ export default function Tv2DashboardPage() {
     currentMonth: 9
   });
 
+  // Laboratorio CeNem Data & TV Edit States
+  const [cenemEvents, setCenemEvents] = useState([]);
+  const [editingCenemInTv, setEditingCenemInTv] = useState(false);
+  const [tvEditDate, setTvEditDate] = useState('');
+  const [tvEditStartTime, setTvEditStartTime] = useState('');
+  const [tvEditEndTime, setTvEditEndTime] = useState('');
+  const [tvEditTitle, setTvEditTitle] = useState('');
+  const [tvEditRequirements, setTvEditRequirements] = useState('');
+  const [tvEditApplicant, setTvEditApplicant] = useState('');
+
+  // Combined & Merged Calendar Data (Outlook + CeNem Events)
+  const displayCalendarData = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+    const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+    
+    const tom = new Date(now.getTime() + 86400000);
+    const tomorrowStr = `${tom.getFullYear()}-${String(tom.getMonth() + 1).padStart(2, '0')}-${String(tom.getDate()).padStart(2, '0')}`;
+
+    const formattedCenem = (cenemEvents || []).map(c => {
+      const isCancelled = c.status === 'cancelled';
+      const equipmentTags = ['CeNem'];
+      if (c.applicant) equipmentTags.push(`Docente: ${c.applicant}`);
+      if (isCancelled) equipmentTags.unshift('CANCELADO');
+
+      return {
+        id: `cenem_${c.id}`,
+        rawId: c.id,
+        isCeNem: true,
+        status: c.status || 'active',
+        title: c.title.toLowerCase().includes('cenem') ? c.title : `Laboratorio CeNem - ${c.title}`,
+        rawTitle: c.title,
+        description: c.requirements || (c.applicant ? `Solicitado por: ${c.applicant}` : ''),
+        location: 'CeNem',
+        dateStr: c.event_date,
+        timeStr: c.start_time,
+        endTimeStr: c.end_time || '',
+        applicant: c.applicant || '',
+        requirements: c.requirements || '',
+        created_by_email: c.created_by_email || '',
+        aiAnalysis: {
+          equipment_tags: equipmentTags,
+          has_discrepancy: false,
+          event_real_time: c.start_time
+        }
+      };
+    });
+
+    const cenemToday = formattedCenem.filter(c => c.dateStr === todayStr);
+    const cenemTomorrow = formattedCenem.filter(c => c.dateStr === tomorrowStr);
+
+    const sortFn = (a, b) => (a.timeStr || '').localeCompare(b.timeStr || '');
+    
+    const mergedToday = [
+      ...(calendarData.todayEvents || []).filter(e => !e.isCeNem),
+      ...cenemToday
+    ].sort(sortFn);
+
+    const mergedTomorrow = [
+      ...(calendarData.tomorrowEvents || []).filter(e => !e.isCeNem),
+      ...cenemTomorrow
+    ].sort(sortFn);
+
+    const mergedDaysWithEvents = { ...(calendarData.daysWithEvents || {}) };
+    const mergedMonthEvents = [...(calendarData.monthEvents || []).filter(e => !e.isCeNem)];
+
+    formattedCenem.forEach(c => {
+      if (c.dateStr) {
+        const [y, m, d] = c.dateStr.split('-').map(Number);
+        if (y === (calendarData.currentYear || currentYear) && m === (calendarData.currentMonth || currentMonth)) {
+          mergedMonthEvents.push(c);
+          if (!mergedDaysWithEvents[d]) {
+            mergedDaysWithEvents[d] = [];
+          }
+          if (!mergedDaysWithEvents[d].some(x => x.id === c.id)) {
+            mergedDaysWithEvents[d] = [...mergedDaysWithEvents[d], c];
+          }
+        }
+      }
+    });
+
+    return {
+      ...calendarData,
+      todayStr,
+      tomorrowStr,
+      todayEvents: mergedToday,
+      tomorrowEvents: mergedTomorrow,
+      monthEvents: mergedMonthEvents,
+      daysWithEvents: mergedDaysWithEvents
+    };
+  }, [calendarData, cenemEvents]);
+
+  // Combined Weekly Calendar Events (Fixed events + CeNem with day_of_week)
+  const combinedWeeklyEvents = useMemo(() => {
+    const dayMap = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+    
+    const formattedCenemWeekly = (cenemEvents || []).map(c => {
+      let dayName = 'Lunes';
+      if (c.event_date) {
+        const [y, m, d] = c.event_date.split('-').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        dayName = dayMap[dateObj.getDay()] || 'Lunes';
+      }
+
+      return {
+        id: `cenem_${c.id}`,
+        rawId: c.id,
+        isCeNem: true,
+        status: c.status || 'active',
+        day_of_week: dayName,
+        title: c.title.toLowerCase().includes('cenem') ? c.title : `[CeNem] ${c.title}`,
+        rawTitle: c.title,
+        time_range: `${c.start_time} - ${c.end_time || ''}`,
+        description: c.requirements || (c.applicant ? `Solicitante: ${c.applicant}` : ''),
+        applicant: c.applicant,
+        requirements: c.requirements,
+        event_date: c.event_date,
+        start_time: c.start_time,
+        end_time: c.end_time
+      };
+    });
+
+    return [...(events || []), ...formattedCenemWeekly];
+  }, [events, cenemEvents]);
+
   // Mobile Single Day view state (defaults to today's day of week, e.g. 'Jueves')
   const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const todayDayIdx = new Date().getDay();
@@ -423,10 +551,11 @@ export default function Tv2DashboardPage() {
         });
       }
 
-      // 3. Outlook Helpdesk Events check for Today
-      if (calendarData.todayEvents && calendarData.todayEvents.length > 0) {
-        calendarData.todayEvents.forEach(oEvt => {
+      // 3. Outlook Helpdesk & CeNem Events check for Today
+      if (displayCalendarData.todayEvents && displayCalendarData.todayEvents.length > 0) {
+        displayCalendarData.todayEvents.forEach(oEvt => {
           if (oEvt.isDateOnly || !oEvt.timeStr) return;
+          if (oEvt.status === 'cancelled') return;
 
           const parts = oEvt.timeStr.split(':');
           if (parts.length < 2) return;
@@ -438,17 +567,17 @@ export default function Tv2DashboardPage() {
           const diffMin = targetTotalMin - nowTotalMin;
 
           if (diffMin >= -10 && diffMin <= 15) {
-            const key = `outlook_${oEvt.id}_${todayStr}_${oEvt.timeStr}`;
+            const key = `evt_${oEvt.id}_${todayStr}_${oEvt.timeStr}`;
             if (!alertedDirectivesRef.current.has(key)) {
               due.push({
-                id: `outlook_${oEvt.id}`,
+                id: `evt_${oEvt.id}`,
                 dedupKey: key,
-                sourceType: 'outlook',
-                badge: 'HELPDESK OUTLOOK',
+                sourceType: oEvt.isCeNem ? 'cenem' : 'outlook',
+                badge: oEvt.isCeNem ? 'LAB CeNem' : 'HELPDESK OUTLOOK',
                 title: oEvt.title.toUpperCase(),
                 time: oEvt.timeStr,
                 text: oEvt.description || oEvt.title,
-                subtitle: `Calendario Helpdesk UCEMA • ${oEvt.timeStr} hs`,
+                subtitle: `${oEvt.location || 'UCEMA'} • ${oEvt.timeStr} hs`,
                 creator: oEvt.location || 'Helpdesk',
                 diffMinutes: diffMin
               });
@@ -471,7 +600,7 @@ export default function Tv2DashboardPage() {
     checkUpcoming();
     const interval = setInterval(checkUpcoming, 10000);
     return () => clearInterval(interval);
-  }, [directives, events, calendarData.todayEvents]);
+  }, [directives, events, displayCalendarData.todayEvents]);
 
   // 50-second auto-close countdown for TV
   useEffect(() => {
@@ -490,12 +619,178 @@ export default function Tv2DashboardPage() {
     return () => clearInterval(interval);
   }, [showAlertModal]);
 
+  const loadDemoCenemTv = () => {
+    const localCenem = localStorage.getItem('demo_cenem_events');
+    if (localCenem) {
+      try {
+        setCenemEvents(JSON.parse(localCenem));
+        return;
+      } catch {}
+    }
+
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    const tom = new Date(now.getTime() + 86400000);
+    const tomY = tom.getFullYear();
+    const tomM = String(tom.getMonth() + 1).padStart(2, '0');
+    const tomD = String(tom.getDate()).padStart(2, '0');
+    const tomorrowStr = `${tomY}-${tomM}-${tomD}`;
+
+    const defaultCenem = [
+      {
+        id: 'cenem_1',
+        title: 'Taller Finanzas Cuantitativas CeNem',
+        event_date: todayStr,
+        start_time: '16:00',
+        end_time: '21:00',
+        requirements: '25 PCs configuradas, proyector HDMI, software Python y R.',
+        applicant: 'Prof. Emilio Ocampo',
+        status: 'active',
+        created_by_email: 'sanchezmanuel397@gmail.com',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: 'cenem_2',
+        title: 'Laboratorio CeNem - Modelado de Datos',
+        event_date: tomorrowStr,
+        start_time: '18:00',
+        end_time: '21:00',
+        requirements: 'Verificar Jupyter Notebooks, conectividad a bases de datos y audio.',
+        applicant: 'Dra. María González',
+        status: 'active',
+        created_by_email: 'ajgarcia@ucema.edu.ar',
+        created_at: new Date().toISOString()
+      }
+    ];
+    localStorage.setItem('demo_cenem_events', JSON.stringify(defaultCenem));
+    setCenemEvents(defaultCenem);
+  };
+
+  const fetchCenemEvents = async () => {
+    try {
+      const { data, error } = await supabase.from('cenem_events').select('*').order('event_date', { ascending: true });
+      if (!error && data) {
+        setCenemEvents(data);
+      } else {
+        loadDemoCenemTv();
+      }
+    } catch {
+      loadDemoCenemTv();
+    }
+  };
+
+  const broadcastCenemUpdateFromTv = (updated) => {
+    try {
+      localStorage.setItem('demo_cenem_events', JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('cenem_updated', { detail: updated }));
+    } catch {}
+  };
+
+  const handleOpenEditCenemTv = (evt) => {
+    setEditingCenemInTv(true);
+    setTvEditDate(evt.dateStr || evt.event_date || '');
+    setTvEditStartTime(evt.timeStr || evt.start_time || '');
+    setTvEditEndTime(evt.endTimeStr || evt.end_time || '');
+    setTvEditTitle(evt.rawTitle || evt.title || '');
+    setTvEditRequirements(evt.requirements || evt.description || '');
+    setTvEditApplicant(evt.applicant || '');
+  };
+
+  const handleSaveEditCenemTv = async (e) => {
+    e.preventDefault();
+    if (!selectedTicketModal || !tvEditTitle.trim()) return;
+
+    const rawId = selectedTicketModal.rawId || selectedTicketModal.id.replace('cenem_', '');
+    const updatedData = {
+      title: tvEditTitle.trim(),
+      event_date: tvEditDate,
+      start_time: tvEditStartTime,
+      end_time: tvEditEndTime,
+      requirements: tvEditRequirements.trim(),
+      applicant: tvEditApplicant.trim(),
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      const { error } = await supabase
+        .from('cenem_events')
+        .update(updatedData)
+        .eq('id', rawId);
+      if (error) throw error;
+      fetchCenemEvents();
+    } catch {
+      const updated = cenemEvents.map(c => (c.id === rawId || `cenem_${c.id}` === selectedTicketModal.id) ? { ...c, ...updatedData } : c);
+      setCenemEvents(updated);
+      broadcastCenemUpdateFromTv(updated);
+    }
+
+    setEditingCenemInTv(false);
+    setSelectedTicketModal(prev => prev ? {
+      ...prev,
+      title: tvEditTitle.trim().toLowerCase().includes('cenem') ? tvEditTitle.trim() : `Laboratorio CeNem - ${tvEditTitle.trim()}`,
+      rawTitle: tvEditTitle.trim(),
+      timeStr: tvEditStartTime,
+      endTimeStr: tvEditEndTime,
+      dateStr: tvEditDate,
+      description: tvEditRequirements.trim(),
+      requirements: tvEditRequirements.trim(),
+      applicant: tvEditApplicant.trim()
+    } : null);
+  };
+
+  const handleToggleCancelCenemTv = async (evt) => {
+    if (!evt) return;
+    const rawId = evt.rawId || evt.id.replace('cenem_', '');
+    const newStatus = evt.status === 'cancelled' ? 'active' : 'cancelled';
+
+    try {
+      const { error } = await supabase
+        .from('cenem_events')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', rawId);
+      if (error) throw error;
+      fetchCenemEvents();
+    } catch {
+      const updated = cenemEvents.map(c => (c.id === rawId || `cenem_${c.id}` === evt.id) ? { ...c, status: newStatus } : c);
+      setCenemEvents(updated);
+      broadcastCenemUpdateFromTv(updated);
+    }
+
+    setSelectedTicketModal(prev => prev ? { ...prev, status: newStatus } : null);
+  };
+
+  const handleDeleteCenemTv = async (id) => {
+    if (!window.confirm('¿Deseas eliminar definitivamente esta reserva de Laboratorio CeNem?')) return;
+    const rawId = id.replace('cenem_', '');
+
+    try {
+      const { error } = await supabase
+        .from('cenem_events')
+        .delete()
+        .eq('id', rawId);
+      if (error) throw error;
+      fetchCenemEvents();
+    } catch {
+      const updated = cenemEvents.filter(c => c.id !== rawId && `cenem_${c.id}` !== id);
+      setCenemEvents(updated);
+      broadcastCenemUpdateFromTv(updated);
+    }
+
+    setSelectedTicketModal(null);
+    setEditingCenemInTv(false);
+  };
+
   const loadDemoData = () => {
     const localTheme = localStorage.getItem('demo_tv_theme');
     if (localTheme) setTvTheme(localTheme);
     setDirectives(JSON.parse(localStorage.getItem('demo_directives') || '[]'));
     setObservations(JSON.parse(localStorage.getItem('demo_observations') || '[]'));
     setEvents(JSON.parse(localStorage.getItem('demo_events') || '[]'));
+    loadDemoCenemTv();
   };
 
   const fetchInitialData = async () => {
@@ -516,6 +811,8 @@ export default function Tv2DashboardPage() {
 
       const { data: evts } = await supabase.from('fixed_events').select('*').order('created_at', { ascending: false });
       if (evts) setEvents(evts);
+
+      await fetchCenemEvents();
     } catch (err) {
       console.error('Error fetching TV data:', err);
       loadDemoData();
@@ -566,12 +863,39 @@ export default function Tv2DashboardPage() {
           }
           fetchInitialData();
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'cenem_events' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setCenemEvents(prev => [payload.new, ...prev.filter(c => c.id !== payload.new.id)]);
+          } else if (payload.eventType === 'DELETE') {
+            setCenemEvents(prev => prev.filter(c => c.id !== payload.old.id));
+          } else if (payload.eventType === 'UPDATE') {
+            setCenemEvents(prev => prev.map(c => c.id === payload.new.id ? payload.new : c));
+          }
+          fetchCenemEvents();
+        })
         .subscribe();
     }
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'demo_cenem_events' && e.newValue) {
+        try {
+          setCenemEvents(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    const handleCustomCenem = (e) => {
+      if (e.detail) {
+        setCenemEvents(e.detail);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('cenem_updated', handleCustomCenem);
 
     initDashboard();
 
     return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('cenem_updated', handleCustomCenem);
       if (channel) {
         supabase.removeChannel(channel);
       }
@@ -638,8 +962,8 @@ export default function Tv2DashboardPage() {
 
   // Generate Month Grid Matrix (Monday to Sunday)
   const monthGrid = useMemo(() => {
-    const year = calendarData.currentYear;
-    const month = calendarData.currentMonth;
+    const year = displayCalendarData.currentYear;
+    const month = displayCalendarData.currentMonth;
     const firstDay = new Date(year, month - 1, 1);
     const lastDay = new Date(year, month, 0);
     const totalDays = lastDay.getDate();
@@ -660,7 +984,7 @@ export default function Tv2DashboardPage() {
     const currentDayNumber = new Date().getDate();
     for (let d = 1; d <= totalDays; d++) {
       const isToday = d === currentDayNumber;
-      const dayEvents = calendarData.daysWithEvents[d] || [];
+      const dayEvents = displayCalendarData.daysWithEvents[d] || [];
       cells.push({
         day: d,
         isCurrentMonth: true,
@@ -680,7 +1004,7 @@ export default function Tv2DashboardPage() {
     }
 
     return cells;
-  }, [calendarData.currentYear, calendarData.currentMonth, calendarData.daysWithEvents]);
+  }, [displayCalendarData.currentYear, displayCalendarData.currentMonth, displayCalendarData.daysWithEvents]);
 
   // Formatted date string for HOY & MAÑANA headers
   const todayHeaderDate = useMemo(() => {
@@ -709,20 +1033,35 @@ export default function Tv2DashboardPage() {
         ? `${evt.timeStr} - ${evt.endTimeStr} hs` 
         : `${evt.timeStr} hs`;
 
+    const isCancelled = evt.status === 'cancelled';
+
     return (
       <div 
         key={evt.id}
         onClick={() => setSelectedTicketModal(evt)}
         className={`p-3 rounded-xl border flex flex-col gap-2 transition-all duration-200 shadow-xs cursor-pointer active:scale-[0.99] group ${
-          isLight 
-            ? 'bg-white border-slate-200 hover:border-[#940028]/60 text-slate-800 hover:shadow-md' 
-            : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white hover:bg-[#18181e]'
+          isCancelled
+            ? isLight
+              ? 'bg-slate-50 border-red-200 opacity-75 hover:opacity-100'
+              : 'bg-[#151113] border-red-950/70 opacity-75 hover:opacity-100'
+            : isLight 
+              ? 'bg-white border-slate-200 hover:border-[#940028]/60 text-slate-800 hover:shadow-md' 
+              : 'bg-[#141418] border-zinc-800 hover:border-zinc-700 text-white hover:bg-[#18181e]'
         }`}
       >
         {/* Time Badges & Location */}
         <div className="flex items-center justify-between gap-1.5 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
-            {evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
+            {isCancelled ? (
+              <>
+                <span className="text-[10px] font-extrabold font-mono px-2 py-0.5 rounded flex items-center gap-1 bg-red-700 text-white shadow-xs line-through">
+                  <Clock size={11} /> {timeLabel}
+                </span>
+                <span className="text-[9.5px] font-bold font-mono px-2 py-0.5 rounded bg-red-950 border border-red-800 text-red-300">
+                  ❌ CANCELADO
+                </span>
+              </>
+            ) : evt.aiAnalysis?.has_discrepancy && evt.aiAnalysis?.event_real_time ? (
               <>
                 <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
                   isLight ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-amber-950/80 text-amber-300 border border-amber-800'
@@ -751,14 +1090,21 @@ export default function Tv2DashboardPage() {
             )}
           </div>
 
-          {evt.location && (
+          {evt.isCeNem ? (
+            <span className={`text-[9.5px] font-mono flex items-center gap-1 px-2 py-0.5 rounded font-bold border ${
+              isLight ? 'bg-red-50 text-[#940028] border-red-200' : 'bg-[#940028]/20 text-[#f1a3b3] border-[#940028]/50'
+            }`}>
+              <Layers size={10} className="text-[#940028] flex-shrink-0" />
+              <span>CeNem</span>
+            </span>
+          ) : evt.location ? (
             <span className={`text-[9.5px] font-mono truncate max-w-[140px] flex items-center gap-1 px-1.5 py-0.5 rounded ${
               isLight ? 'bg-slate-100 text-slate-600' : 'bg-zinc-850 text-zinc-300 border border-zinc-750'
             }`}>
               <MapPin size={10} className="text-[#940028] flex-shrink-0" />
               <span className="truncate">{evt.location}</span>
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* Discrepancy Note if present */}
@@ -773,7 +1119,9 @@ export default function Tv2DashboardPage() {
 
         {/* Title */}
         <h4 className={`text-xs sm:text-[13px] font-bold leading-snug group-hover:text-[#e03158] transition-colors ${
-          isLight ? 'text-slate-900' : 'text-zinc-100'
+          isCancelled
+            ? 'line-through text-zinc-500'
+            : isLight ? 'text-slate-900' : 'text-zinc-100'
         }`}>
           {evt.title}
         </h4>
@@ -1020,13 +1368,13 @@ export default function Tv2DashboardPage() {
         <div className="flex items-center gap-2 min-w-0">
           <CalendarIcon size={14} className={isLight ? 'text-[#940028]' : 'text-red-400 flex-shrink-0'} />
           <h2 className={`text-xs font-black tracking-widest font-mono uppercase truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-            {calendarData.currentMonthName} {calendarData.currentYear}
+            {displayCalendarData.currentMonthName} {displayCalendarData.currentYear}
           </h2>
         </div>
         <span className={`text-[9px] font-mono px-2 py-0.5 rounded flex-shrink-0 whitespace-nowrap ${
           isLight ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
         }`}>
-          {calendarData.monthEvents.length} EVENTOS
+          {displayCalendarData.monthEvents.length} EVENTOS
         </span>
       </div>
 
@@ -1112,10 +1460,10 @@ export default function Tv2DashboardPage() {
     </section>
   );
 
-  // BLOCK 1: EVENTOS HOY & MAÑANA (OUTLOOK HELPDESK)
+  // BLOCK 1: EVENTOS HOY & MAÑANA (OUTLOOK HELPDESK & CeNem)
   const renderBlockHoyManana = (extraClass = '') => {
-    const hasTodayEvents = calendarData.todayEvents && calendarData.todayEvents.length > 0;
-    const hasTomorrowEvents = calendarData.tomorrowEvents && calendarData.tomorrowEvents.length > 0;
+    const hasTodayEvents = displayCalendarData.todayEvents && displayCalendarData.todayEvents.length > 0;
+    const hasTomorrowEvents = displayCalendarData.tomorrowEvents && displayCalendarData.tomorrowEvents.length > 0;
 
     return (
       <section 
@@ -1157,17 +1505,17 @@ export default function Tv2DashboardPage() {
                 <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
                   isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300 border border-[#940028]/40'
                 }`}>
-                  {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                  {displayCalendarData.tomorrowEvents.length} {displayCalendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
                 </span>
               </div>
 
               <AutoScrollBox 
                 className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
-                dependencies={[calendarData.tomorrowEvents]}
+                dependencies={[displayCalendarData.tomorrowEvents]}
                 speed={0.3}
                 pauseFrames={150}
               >
-                {calendarData.tomorrowEvents.map(evt => renderEventCard(evt))}
+                {displayCalendarData.tomorrowEvents.map(evt => renderEventCard(evt))}
               </AutoScrollBox>
             </div>
           </>
@@ -1187,17 +1535,17 @@ export default function Tv2DashboardPage() {
                 <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold ${
                   isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300 border border-[#940028]/40'
                 }`}>
-                  {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                  {displayCalendarData.todayEvents.length} {displayCalendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
                 </span>
               </div>
 
               <AutoScrollBox 
                 className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
-                dependencies={[calendarData.todayEvents]}
+                dependencies={[displayCalendarData.todayEvents]}
                 speed={0.3}
                 pauseFrames={150}
               >
-                {calendarData.todayEvents.map(evt => renderEventCard(evt))}
+                {displayCalendarData.todayEvents.map(evt => renderEventCard(evt))}
               </AutoScrollBox>
             </div>
 
@@ -1236,13 +1584,13 @@ export default function Tv2DashboardPage() {
                     ? isLight ? 'bg-[#940028]/10 text-[#940028]' : 'bg-[#940028]/30 text-red-300 border border-[#940028]/40'
                     : isLight ? 'text-slate-400' : 'text-zinc-500'
                 }`}>
-                  {calendarData.todayEvents.length} {calendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                  {displayCalendarData.todayEvents.length} {displayCalendarData.todayEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
                 </span>
               </div>
 
               <AutoScrollBox 
                 className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
-                dependencies={[calendarData.todayEvents]}
+                dependencies={[displayCalendarData.todayEvents]}
                 speed={0.3}
                 pauseFrames={150}
               >
@@ -1254,7 +1602,7 @@ export default function Tv2DashboardPage() {
                     <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS HOY</span>
                   </div>
                 ) : (
-                  calendarData.todayEvents.map(evt => renderEventCard(evt))
+                  displayCalendarData.todayEvents.map(evt => renderEventCard(evt))
                 )}
               </AutoScrollBox>
             </div>
@@ -1276,13 +1624,13 @@ export default function Tv2DashboardPage() {
                     ? isLight ? 'bg-slate-100 text-slate-700' : 'bg-zinc-850 text-zinc-300'
                     : isLight ? 'text-slate-400' : 'text-zinc-500'
                 }`}>
-                  {calendarData.tomorrowEvents.length} {calendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
+                  {displayCalendarData.tomorrowEvents.length} {displayCalendarData.tomorrowEvents.length === 1 ? 'EVENTO' : 'EVENTOS'}
                 </span>
               </div>
 
               <AutoScrollBox 
                 className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 pr-0.5 pb-2"
-                dependencies={[calendarData.tomorrowEvents]}
+                dependencies={[displayCalendarData.tomorrowEvents]}
                 speed={0.3}
                 pauseFrames={150}
                 staggerMs={300}
@@ -1295,7 +1643,7 @@ export default function Tv2DashboardPage() {
                     <span className="text-[10px] font-mono font-bold uppercase">SIN EVENTOS MAÑANA</span>
                   </div>
                 ) : (
-                  calendarData.tomorrowEvents.map(evt => renderEventCard(evt))
+                  displayCalendarData.tomorrowEvents.map(evt => renderEventCard(evt))
                 )}
               </AutoScrollBox>
             </div>
@@ -1313,10 +1661,11 @@ export default function Tv2DashboardPage() {
       }`}
     >
       <AdaptiveWeeklyCalendar 
-        events={events} 
+        events={combinedWeeklyEvents} 
         isLight={isLight}
         isFourDayMode={isFourDayMode}
         onToggleFourDayMode={handleToggleFourDayMode}
+        onEventClick={(evt) => setSelectedTicketModal(evt)}
       />
     </section>
   );
@@ -1467,7 +1816,7 @@ export default function Tv2DashboardPage() {
             }`}>
               <div>
                 <span className={`text-[10px] font-mono uppercase block mb-0.5 ${isLight ? 'text-slate-500' : 'text-zinc-400'}`}>
-                  ⏰ Horario de Armado
+                  ⏰ Horario {selectedTicketModal.isCeNem ? 'de Reserva' : 'de Armado'}
                 </span>
                 <span className={`text-sm font-bold font-mono ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   {selectedTicketModal.timeStr} {selectedTicketModal.endTimeStr ? `- ${selectedTicketModal.endTimeStr}` : ''} hs
@@ -1475,13 +1824,36 @@ export default function Tv2DashboardPage() {
               </div>
               <div>
                 <span className={`text-[10px] font-mono uppercase block mb-0.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>
-                  🎤 Inicio Real del Evento
+                  {selectedTicketModal.isCeNem ? '📅 Fecha' : '🎤 Inicio Real del Evento'}
                 </span>
                 <span className="text-sm font-bold font-mono text-amber-500">
-                  {selectedTicketModal.aiAnalysis?.event_real_time || `${selectedTicketModal.timeStr} hs`}
+                  {selectedTicketModal.isCeNem 
+                    ? (selectedTicketModal.dateStr || 'Hoy')
+                    : (selectedTicketModal.aiAnalysis?.event_real_time || `${selectedTicketModal.timeStr} hs`)}
                 </span>
               </div>
             </div>
+
+            {/* CeNem Status Banner if applicable */}
+            {selectedTicketModal.isCeNem && (
+              <div className={`p-3 rounded-lg border flex items-center justify-between text-xs ${
+                selectedTicketModal.status === 'cancelled'
+                  ? 'bg-red-950/60 border-red-800 text-red-200'
+                  : 'bg-emerald-950/60 border-emerald-800 text-emerald-200'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${selectedTicketModal.status === 'cancelled' ? 'bg-red-500' : 'bg-emerald-400 animate-pulse'}`}></span>
+                  <span className="font-mono font-bold uppercase">
+                    ESTADO: {selectedTicketModal.status === 'cancelled' ? 'RESERVA CANCELADA' : 'RESERVA ACTIVA'}
+                  </span>
+                </div>
+                {selectedTicketModal.applicant && (
+                  <span className="font-mono text-[11px] opacity-90">
+                    Docente: {selectedTicketModal.applicant}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Discrepancy Alert Banner */}
             {selectedTicketModal.aiAnalysis?.has_discrepancy && (
@@ -1507,7 +1879,9 @@ export default function Tv2DashboardPage() {
                     <span 
                       key={idx}
                       className={`text-xs font-mono font-bold px-3 py-1.5 rounded-lg border shadow-xs ${
-                        isLight ? 'bg-white text-slate-800 border-slate-200' : 'bg-zinc-900 text-zinc-100 border-zinc-700'
+                        tag === 'CANCELADO'
+                          ? 'bg-red-900 text-white border-red-700'
+                          : isLight ? 'bg-white text-slate-800 border-slate-200' : 'bg-zinc-900 text-zinc-100 border-zinc-700'
                       }`}
                     >
                       {tag}
@@ -1517,22 +1891,145 @@ export default function Tv2DashboardPage() {
               </div>
             )}
 
-            {/* Full Message Body */}
-            <div>
-              <h4 className={`text-xs font-mono font-bold uppercase mb-2 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
-                Mensaje Completo del Ticket:
-              </h4>
-              <div className={`p-4 rounded-lg border text-xs font-sans whitespace-pre-line leading-relaxed max-h-52 overflow-y-auto ${
-                isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-zinc-950 border-zinc-900 text-zinc-200'
-              }`}>
-                {selectedTicketModal.description || 'Sin descripción adicional.'}
-              </div>
-            </div>
+            {/* Full Message Body / Edit Form */}
+            {selectedTicketModal.isCeNem && editingCenemInTv ? (
+              <form onSubmit={handleSaveEditCenemTv} className="space-y-3 border-t border-zinc-800 pt-3">
+                <div className="bg-amber-950/40 border border-amber-800 text-amber-300 text-xs p-2 rounded font-mono flex items-center gap-2">
+                  <Edit3 size={14} /> Modificando Reserva de Laboratorio CeNem
+                </div>
 
-            {/* Footer */}
-            <div className="flex justify-end pt-2">
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Día (Fecha)</label>
+                  <input
+                    type="date"
+                    value={tvEditDate}
+                    onChange={(e) => setTvEditDate(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Horario Inicio</label>
+                    <input
+                      type="time"
+                      value={tvEditStartTime}
+                      onChange={(e) => setTvEditStartTime(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Horario Fin</label>
+                    <input
+                      type="time"
+                      value={tvEditEndTime}
+                      onChange={(e) => setTvEditEndTime(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Título / Actividad</label>
+                  <input
+                    type="text"
+                    value={tvEditTitle}
+                    onChange={(e) => setTvEditTitle(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Solicitante / Docente</label>
+                  <input
+                    type="text"
+                    value={tvEditApplicant}
+                    onChange={(e) => setTvEditApplicant(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Requerimientos Técnicos</label>
+                  <textarea
+                    value={tvEditRequirements}
+                    onChange={(e) => setTvEditRequirements(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs rounded text-white h-20"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-[#940028] hover:bg-[#b30032] text-white text-xs font-mono font-bold py-2 px-3 rounded transition cursor-pointer"
+                  >
+                    Guardar Cambios
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingCenemInTv(false)}
+                    className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono py-2 px-3 rounded transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <h4 className={`text-xs font-mono font-bold uppercase mb-2 ${isLight ? 'text-slate-600' : 'text-zinc-400'}`}>
+                  {selectedTicketModal.isCeNem ? 'Requerimientos y Notas de Reserva:' : 'Mensaje Completo del Ticket:'}
+                </h4>
+                <div className={`p-4 rounded-lg border text-xs font-sans whitespace-pre-line leading-relaxed max-h-52 overflow-y-auto ${
+                  isLight ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-zinc-950 border-zinc-900 text-zinc-200'
+                }`}>
+                  {selectedTicketModal.description || 'Sin descripción adicional.'}
+                </div>
+              </div>
+            )}
+
+            {/* Footer & Actions for Soportistas/Admins */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t border-zinc-800">
+              {selectedTicketModal.isCeNem && !editingCenemInTv ? (
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => handleOpenEditCenemTv(selectedTicketModal)}
+                    className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border border-zinc-700"
+                  >
+                    <Edit3 size={13} className="text-amber-400" /> Modificar
+                  </button>
+
+                  <button
+                    onClick={() => handleToggleCancelCenemTv(selectedTicketModal)}
+                    className={`flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                      selectedTicketModal.status === 'cancelled'
+                        ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-800'
+                        : 'bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-800'
+                    }`}
+                  >
+                    {selectedTicketModal.status === 'cancelled' ? (
+                      <><RefreshCw size={13} /> Reactivar</>
+                    ) : (
+                      <><Ban size={13} /> Cancelar</>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteCenemTv(selectedTicketModal.id)}
+                    className="px-3 py-2 rounded-lg bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-800 text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Trash2 size={13} /> Borrar
+                  </button>
+                </div>
+              ) : (
+                <div />
+              )}
+
               <button
-                onClick={() => setSelectedTicketModal(null)}
+                onClick={() => { setSelectedTicketModal(null); setEditingCenemInTv(false); }}
                 className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#940028] hover:bg-[#b30032] text-white text-xs font-bold font-mono tracking-wider transition cursor-pointer"
               >
                 Cerrar Detalle

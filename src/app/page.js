@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { 
-  Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle, Bell, Clock, X
+  Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle, Bell, Clock, X,
+  Layers, Edit3, CheckCircle, Ban, RefreshCw, User, Check
 } from 'lucide-react';
 
 // --- HELPER COMPONENT: AutoScrollBox for long lists and modals ---
@@ -136,6 +137,33 @@ export default function ManagementPage() {
   const [observationsList, setObservationsList] = useState([]);
   const [eventsList, setEventsList] = useState([]);
 
+  // Laboratorio CeNem form states
+  const [cenemDate, setCenemDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [cenemStartTime, setCenemStartTime] = useState('16:00');
+  const [cenemEndTime, setCenemEndTime] = useState('21:00');
+  const [cenemTitle, setCenemTitle] = useState('');
+  const [cenemRequirements, setCenemRequirements] = useState('');
+  const [cenemApplicant, setCenemApplicant] = useState('');
+
+  // CeNem database list
+  const [cenemList, setCenemList] = useState([]);
+
+  // Selected CeNem item for interactive modal (view / edit / cancel / delete)
+  const [selectedCenem, setSelectedCenem] = useState(null);
+  const [isEditingCenem, setIsEditingCenem] = useState(false);
+  const [editCenemDate, setEditCenemDate] = useState('');
+  const [editCenemStartTime, setEditCenemStartTime] = useState('');
+  const [editCenemEndTime, setEditCenemEndTime] = useState('');
+  const [editCenemTitle, setEditCenemTitle] = useState('');
+  const [editCenemRequirements, setEditCenemRequirements] = useState('');
+  const [editCenemApplicant, setEditCenemApplicant] = useState('');
+
   // Alert Modal states for upcoming tasks (<15 min)
   const [upcomingTasks, setUpcomingTasks] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -223,10 +251,37 @@ export default function ManagementPage() {
         }
         fetchData();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cenem_events' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setCenemList(prev => [payload.new, ...prev.filter(c => c.id !== payload.new.id)]);
+        } else if (payload.eventType === 'DELETE') {
+          setCenemList(prev => prev.filter(c => c.id !== payload.old.id));
+        } else if (payload.eventType === 'UPDATE') {
+          setCenemList(prev => prev.map(c => c.id === payload.new.id ? payload.new : c));
+        }
+        fetchData();
+      })
       .subscribe();
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'demo_cenem_events' && e.newValue) {
+        try {
+          setCenemList(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    const handleCustomCenem = (e) => {
+      if (e.detail) {
+        setCenemList(e.detail);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('cenem_updated', handleCustomCenem);
 
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('cenem_updated', handleCustomCenem);
     };
   }, []);
 
@@ -338,6 +393,42 @@ export default function ManagementPage() {
         });
       }
 
+      // 3. Laboratorio CeNem check
+      if (cenemList && cenemList.length > 0) {
+        cenemList.forEach(c => {
+          if (c.status === 'cancelled') return;
+          if (!c.event_date || c.event_date !== todayStr) return;
+          if (!c.start_time) return;
+
+          const parts = c.start_time.split(':');
+          if (parts.length < 2) return;
+          const targetH = parseInt(parts[0], 10);
+          const targetM = parseInt(parts[1], 10);
+          if (isNaN(targetH) || isNaN(targetM)) return;
+
+          const targetTotalMin = targetH * 60 + targetM;
+          const diffMin = targetTotalMin - nowTotalMin;
+
+          if (diffMin >= -10 && diffMin <= 15) {
+            const key = `cenem_${c.id}_${c.event_date}_${c.start_time}`;
+            if (!alertedIdsRef.current.has(key)) {
+              due.push({
+                id: `cenem_${c.id}`,
+                dedupKey: key,
+                sourceType: 'cenem',
+                badge: 'LAB CeNem',
+                title: (c.title || 'Laboratorio CeNem').toUpperCase(),
+                time: `${c.start_time} - ${c.end_time || ''}`,
+                text: c.requirements || 'Uso programado del Laboratorio CeNem',
+                subtitle: `Laboratorio CeNem • Fecha: ${c.event_date}${c.applicant ? ` • Solicitante: ${c.applicant}` : ''}`,
+                creator: c.created_by_email,
+                diffMinutes: diffMin
+              });
+            }
+          }
+        });
+      }
+
       if (due.length > 0) {
         due.forEach(d => {
           alertedIdsRef.current.add(d.dedupKey);
@@ -352,7 +443,7 @@ export default function ManagementPage() {
     checkUpcoming();
     const interval = setInterval(checkUpcoming, 10000);
     return () => clearInterval(interval);
-  }, [directivesList, eventsList]);
+  }, [directivesList, eventsList, cenemList]);
 
   // 50-second auto-close countdown
   useEffect(() => {
@@ -398,11 +489,74 @@ export default function ManagementPage() {
       const { data: evts, error: errEvts } = await supabase.from('fixed_events').select('*').order('created_at', { ascending: false });
       if (errEvts) throw errEvts;
       if (evts) setEventsList(evts);
+
+      // CeNem Events
+      try {
+        const { data: cenems, error: errCenems } = await supabase.from('cenem_events').select('*').order('event_date', { ascending: true });
+        if (!errCenems && cenems) {
+          setCenemList(cenems);
+        } else {
+          loadDemoCenem();
+        }
+      } catch {
+        loadDemoCenem();
+      }
     } catch (e) {
       console.error('Error fetching dashboard data:', e);
       // Load fallback demo mock data if DB isn't online
       loadDemoData();
     }
+  };
+
+  const loadDemoCenem = () => {
+    const localCenem = localStorage.getItem('demo_cenem_events');
+    if (localCenem) {
+      try {
+        setCenemList(JSON.parse(localCenem));
+        return;
+      } catch {}
+    }
+
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    const tom = new Date(now.getTime() + 86400000);
+    const tomY = tom.getFullYear();
+    const tomM = String(tom.getMonth() + 1).padStart(2, '0');
+    const tomD = String(tom.getDate()).padStart(2, '0');
+    const tomorrowStr = `${tomY}-${tomM}-${tomD}`;
+
+    const defaultCenem = [
+      {
+        id: 'cenem_1',
+        title: 'Taller Finanzas Cuantitativas CeNem',
+        event_date: todayStr,
+        start_time: '16:00',
+        end_time: '21:00',
+        requirements: '25 PCs configuradas, proyector HDMI, software Python y R.',
+        applicant: 'Prof. Emilio Ocampo',
+        status: 'active',
+        created_by_email: 'sanchezmanuel397@gmail.com',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: 'cenem_2',
+        title: 'Laboratorio CeNem - Modelado de Datos',
+        event_date: tomorrowStr,
+        start_time: '18:00',
+        end_time: '21:00',
+        requirements: 'Verificar Jupyter Notebooks, conectividad a bases de datos y audio.',
+        applicant: 'Dra. María González',
+        status: 'active',
+        created_by_email: 'ajgarcia@ucema.edu.ar',
+        created_at: new Date().toISOString()
+      }
+    ];
+    localStorage.setItem('demo_cenem_events', JSON.stringify(defaultCenem));
+    setCenemList(defaultCenem);
   };
 
   const loadDemoData = () => {
@@ -446,6 +600,8 @@ export default function ManagementPage() {
       localStorage.setItem('demo_events', JSON.stringify(defaultEvts));
       setEventsList(defaultEvts);
     }
+
+    loadDemoCenem();
   };
 
   const handleLogout = async () => {
@@ -556,6 +712,132 @@ export default function ManagementPage() {
     }
   };
 
+  // CeNem CRUD handlers
+  const broadcastCenemUpdate = (updatedList) => {
+    try {
+      localStorage.setItem('demo_cenem_events', JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent('cenem_updated', { detail: updatedList }));
+    } catch {}
+  };
+
+  const addCenemEvent = async (e) => {
+    e.preventDefault();
+    if (!cenemTitle.trim()) return;
+
+    const newItem = {
+      title: cenemTitle.trim(),
+      event_date: cenemDate,
+      start_time: cenemStartTime || '16:00',
+      end_time: cenemEndTime || '21:00',
+      requirements: cenemRequirements.trim(),
+      applicant: cenemApplicant.trim(),
+      status: 'active',
+      created_by_email: userEmail || 'anonymous@ucema.edu.ar',
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const { data, error } = await supabase.from('cenem_events').insert([newItem]).select();
+      if (error) throw error;
+      fetchData();
+    } catch {
+      const updated = [
+        { id: `cenem_${Date.now()}`, ...newItem },
+        ...cenemList
+      ];
+      setCenemList(updated);
+      broadcastCenemUpdate(updated);
+    }
+
+    setCenemTitle('');
+    setCenemRequirements('');
+    setCenemApplicant('');
+  };
+
+  const openManageCenem = (evt) => {
+    setSelectedCenem(evt);
+    setIsEditingCenem(false);
+    setEditCenemDate(evt.event_date);
+    setEditCenemStartTime(evt.start_time);
+    setEditCenemEndTime(evt.end_time || '');
+    setEditCenemTitle(evt.title);
+    setEditCenemRequirements(evt.requirements || '');
+    setEditCenemApplicant(evt.applicant || '');
+  };
+
+  const saveEditCenem = async (e) => {
+    e.preventDefault();
+    if (!selectedCenem || !editCenemTitle.trim()) return;
+
+    const updatedData = {
+      title: editCenemTitle.trim(),
+      event_date: editCenemDate,
+      start_time: editCenemStartTime,
+      end_time: editCenemEndTime,
+      requirements: editCenemRequirements.trim(),
+      applicant: editCenemApplicant.trim(),
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      const { error } = await supabase
+        .from('cenem_events')
+        .update(updatedData)
+        .eq('id', selectedCenem.id);
+      if (error) throw error;
+      fetchData();
+    } catch {
+      const updated = cenemList.map(c => c.id === selectedCenem.id ? { ...c, ...updatedData } : c);
+      setCenemList(updated);
+      broadcastCenemUpdate(updated);
+    }
+
+    setSelectedCenem(prev => prev ? { ...prev, ...updatedData } : null);
+    setIsEditingCenem(false);
+  };
+
+  const toggleCancelCenem = async (evt) => {
+    if (!evt) return;
+    const newStatus = evt.status === 'cancelled' ? 'active' : 'cancelled';
+
+    try {
+      const { error } = await supabase
+        .from('cenem_events')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', evt.id);
+      if (error) throw error;
+      fetchData();
+    } catch {
+      const updated = cenemList.map(c => c.id === evt.id ? { ...c, status: newStatus } : c);
+      setCenemList(updated);
+      broadcastCenemUpdate(updated);
+    }
+
+    setSelectedCenem(prev => prev && prev.id === evt.id ? { ...prev, status: newStatus } : prev);
+  };
+
+  const deleteCenem = async (id) => {
+    if (!window.confirm('¿Seguro que deseas eliminar definitivamente este evento del Laboratorio CeNem?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('cenem_events')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      fetchData();
+    } catch {
+      const updated = cenemList.filter(c => c.id !== id);
+      setCenemList(updated);
+      broadcastCenemUpdate(updated);
+    }
+
+    if (selectedCenem?.id === id) {
+      setSelectedCenem(null);
+      setIsEditingCenem(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center font-mono text-zinc-400">
@@ -623,7 +905,7 @@ export default function ManagementPage() {
       </header>
 
       {/* Main Grid Forms */}
-      <main className="flex-grow p-6 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto w-full z-10">
+      <main className="flex-grow p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 max-w-[1700px] mx-auto w-full z-10">
         
         {/* Panel 1: Directivas */}
         <section className="bg-zinc-900/60 border border-zinc-800 rounded p-5 flex flex-col gap-4">
@@ -722,7 +1004,202 @@ export default function ManagementPage() {
           </div>
         </section>
 
-        {/* Panel 2: Observaciones */}
+        {/* Panel 2: Laboratorio CeNem */}
+        <section className="bg-zinc-900/60 border border-zinc-800 rounded p-5 flex flex-col gap-4">
+          <div className="border-b border-zinc-800 pb-3 flex justify-between items-start">
+            <div>
+              <h2 className="text-sm font-bold tracking-widest text-[#f1a3b3] uppercase flex items-center gap-2">
+                <Layers size={16} className="text-[#940028]" /> Laboratorio CeNem
+              </h2>
+              <p className="text-[10px] text-zinc-500 uppercase">Reservas por Día y Horario</p>
+            </div>
+            <span className="text-[10px] font-mono bg-[#940028]/20 text-red-300 border border-[#940028]/40 px-2 py-0.5 rounded font-bold">
+              {cenemList.length} RESERVAS
+            </span>
+          </div>
+
+          <form onSubmit={addCenemEvent} className="space-y-3">
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                Día de Reserva (Fecha) *
+              </label>
+              <input
+                type="date"
+                value={cenemDate}
+                onChange={(e) => setCenemDate(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                  Horario Inicio *
+                </label>
+                <input
+                  type="time"
+                  value={cenemStartTime}
+                  onChange={(e) => setCenemStartTime(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                  Horario Fin *
+                </label>
+                <input
+                  type="time"
+                  value={cenemEndTime}
+                  onChange={(e) => setCenemEndTime(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                Título / Actividad / Materia *
+              </label>
+              <input
+                type="text"
+                value={cenemTitle}
+                onChange={(e) => setCenemTitle(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                placeholder="Ej: Clase Finanzas Cuantitativas"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                Solicitante / Docente (Opcional)
+              </label>
+              <input
+                type="text"
+                value={cenemApplicant}
+                onChange={(e) => setCenemApplicant(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                placeholder="Ej: Prof. Gabriel Martínez"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                Requerimientos técnicos / Notas
+              </label>
+              <textarea
+                value={cenemRequirements}
+                onChange={(e) => setCenemRequirements(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-red-600 h-16"
+                placeholder="Ej: 25 PCs disponibles, proyector HDMI, software R y Python."
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-[#940028] hover:bg-[#7d0022] text-white text-xs font-semibold py-2.5 rounded transition cursor-pointer flex items-center justify-center gap-2 uppercase font-mono shadow-md shadow-[#940028]/25 active:scale-[0.99]"
+            >
+              <PlusCircle size={14} /> Registrar Laboratorio CeNem
+            </button>
+          </form>
+
+          {/* List display */}
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase text-zinc-400 font-mono">Listado CeNem</h3>
+              <span className="text-[9px] text-zinc-500 font-mono">Toca para gestionar</span>
+            </div>
+
+            {cenemList.length === 0 ? (
+              <p className="text-[10px] text-zinc-600 font-mono py-2">No hay reservas cargadas para CeNem.</p>
+            ) : (
+              <AutoScrollBox 
+                className="max-h-[260px] overflow-y-auto no-scrollbar space-y-2 pr-1"
+                dependencies={[cenemList]}
+                speed={0.35}
+                pauseFrames={140}
+              >
+                {cenemList.map(c => {
+                  const isCancelled = c.status === 'cancelled';
+                  return (
+                    <div 
+                      key={c.id} 
+                      onClick={() => openManageCenem(c)}
+                      className={`border p-2.5 rounded text-xs relative cursor-pointer transition group select-none ${
+                        isCancelled
+                          ? 'bg-zinc-950/60 border-red-950/60 opacity-70 hover:opacity-100 hover:border-red-800'
+                          : 'bg-zinc-950 border-zinc-850 hover:border-[#940028]/60 hover:bg-zinc-900/40'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`font-mono text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold ${
+                            isCancelled 
+                              ? 'bg-red-950 text-red-400 border border-red-800' 
+                              : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                          }`}>
+                            {isCancelled ? 'CANCELADO' : 'ACTIVO'}
+                          </span>
+                          <span className="font-bold text-red-400 font-mono text-[11px]">
+                            {c.event_date} · {c.start_time} - {c.end_time} hs
+                          </span>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button 
+                            title={isCancelled ? "Reactivar evento" : "Cancelar evento"}
+                            onClick={() => toggleCancelCenem(c)} 
+                            className={`p-1 rounded cursor-pointer transition ${
+                              isCancelled ? 'text-emerald-400 hover:bg-emerald-950' : 'text-amber-400 hover:bg-amber-950'
+                            }`}
+                          >
+                            {isCancelled ? <RefreshCw size={12} /> : <Ban size={12} />}
+                          </button>
+                          <button 
+                            title="Eliminar evento"
+                            onClick={() => deleteCenem(c.id)} 
+                            className="p-1 rounded text-zinc-600 hover:text-red-500 hover:bg-zinc-900 cursor-pointer transition"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <h4 className={`font-bold text-zinc-200 group-hover:text-red-300 transition-colors ${
+                        isCancelled ? 'line-through text-zinc-500' : ''
+                      }`}>
+                        {c.title}
+                      </h4>
+
+                      {c.applicant && (
+                        <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                          Solicitó: <span className="text-zinc-300">{c.applicant}</span>
+                        </p>
+                      )}
+
+                      {c.requirements && (
+                        <p className="text-zinc-400 text-[11px] line-clamp-2 mt-1 leading-snug">
+                          {c.requirements}
+                        </p>
+                      )}
+
+                      <div className="mt-2 text-[9px] text-[#e03158] font-mono flex items-center justify-between border-t border-zinc-900 pt-1">
+                        <span>Click para modificar o cancelar</span>
+                        <span className="opacity-75">CeNem</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </AutoScrollBox>
+            )}
+          </div>
+        </section>
+
+        {/* Panel 3: Observaciones */}
         <section className="bg-zinc-900/60 border border-zinc-800 rounded p-5 flex flex-col gap-4">
           <div className="border-b border-zinc-800 pb-3">
             <h2 className="text-sm font-bold tracking-widest text-red-500 uppercase flex items-center gap-2">
@@ -912,6 +1389,215 @@ export default function ManagementPage() {
         </section>
 
       </main>
+
+      {/* MODAL INTERACTIVO: GESTIÓN DE LABORATORIO CeNem (MODIFICAR, CANCELAR, BORRAR) */}
+      {selectedCenem && (
+        <div 
+          onClick={() => { setSelectedCenem(null); setIsEditingCenem(false); }}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0e0e11] border border-red-900/60 rounded-xl shadow-2xl shadow-red-950/40 max-w-lg w-full overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200"
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-950/80 to-zinc-900/90 border-b border-red-900/60 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-[#940028] text-white rounded-lg">
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-sm text-white uppercase tracking-wider font-mono">
+                      Laboratorio CeNem
+                    </h3>
+                    <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded ${
+                      selectedCenem.status === 'cancelled'
+                        ? 'bg-red-950 text-red-400 border border-red-800'
+                        : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                    }`}>
+                      {selectedCenem.status === 'cancelled' ? 'CANCELADO' : 'ACTIVO'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-mono">
+                    {selectedCenem.event_date} · {selectedCenem.start_time} - {selectedCenem.end_time} hs
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => { setSelectedCenem(null); setIsEditingCenem(false); }}
+                className="text-zinc-400 hover:text-white p-1.5 rounded-md hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4">
+              {!isEditingCenem ? (
+                /* VIEW MODE */
+                <div className="space-y-4">
+                  <div className="bg-zinc-950 p-3.5 rounded-lg border border-zinc-850 space-y-2">
+                    <h4 className={`text-sm font-bold ${selectedCenem.status === 'cancelled' ? 'line-through text-zinc-500' : 'text-white'}`}>
+                      {selectedCenem.title}
+                    </h4>
+
+                    {selectedCenem.applicant && (
+                      <p className="text-xs text-zinc-400">
+                        <strong className="text-zinc-300">Solicitante:</strong> {selectedCenem.applicant}
+                      </p>
+                    )}
+
+                    <div className="text-xs text-zinc-300 pt-1">
+                      <strong className="text-zinc-400 block text-[10px] uppercase font-mono mb-1">Requerimientos y Observaciones:</strong>
+                      <p className="bg-zinc-900/70 p-2.5 rounded border border-zinc-800 text-[11.5px] leading-relaxed whitespace-pre-line">
+                        {selectedCenem.requirements || 'Sin requerimientos específicos.'}
+                      </p>
+                    </div>
+
+                    <div className="text-[10px] text-zinc-500 font-mono pt-1 border-t border-zinc-900 flex justify-between">
+                      <span>Registró: {selectedCenem.created_by_email}</span>
+                      <span>Ubicación: Laboratorio CeNem</span>
+                    </div>
+                  </div>
+
+                  {/* Actions for Soportistas / Admins */}
+                  <div className="border-t border-zinc-850 pt-4 flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => setIsEditingCenem(true)}
+                      className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-mono font-bold py-2.5 px-3 rounded flex items-center justify-center gap-1.5 transition cursor-pointer border border-zinc-700"
+                    >
+                      <Edit3 size={14} className="text-amber-400" /> Modificar
+                    </button>
+
+                    <button
+                      onClick={() => toggleCancelCenem(selectedCenem)}
+                      className={`flex-1 text-xs font-mono font-bold py-2.5 px-3 rounded flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                        selectedCenem.status === 'cancelled'
+                          ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-800'
+                          : 'bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-800'
+                      }`}
+                    >
+                      {selectedCenem.status === 'cancelled' ? (
+                        <><RefreshCw size={14} /> Reactivar</>
+                      ) : (
+                        <><Ban size={14} /> Cancelar</>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => deleteCenem(selectedCenem.id)}
+                      className="bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-800 text-xs font-mono font-bold py-2.5 px-3 rounded flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Trash2 size={14} /> Borrar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* EDIT MODE */
+                <form onSubmit={saveEditCenem} className="space-y-3">
+                  <div className="bg-amber-950/30 border border-amber-800/50 p-2.5 rounded text-amber-300 text-[11px] font-mono flex items-center gap-2">
+                    <Edit3 size={14} /> Modificando evento de Laboratorio CeNem
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                      Día (Fecha) *
+                    </label>
+                    <input
+                      type="date"
+                      value={editCenemDate}
+                      onChange={(e) => setEditCenemDate(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                        Horario Inicio *
+                      </label>
+                      <input
+                        type="time"
+                        value={editCenemStartTime}
+                        onChange={(e) => setEditCenemStartTime(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                        Horario Fin *
+                      </label>
+                      <input
+                        type="time"
+                        value={editCenemEndTime}
+                        onChange={(e) => setEditCenemEndTime(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                      Título / Actividad *
+                    </label>
+                    <input
+                      type="text"
+                      value={editCenemTitle}
+                      onChange={(e) => setEditCenemTitle(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                      Solicitante / Docente
+                    </label>
+                    <input
+                      type="text"
+                      value={editCenemApplicant}
+                      onChange={(e) => setEditCenemApplicant(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
+                      Requerimientos técnicos / Notas
+                    </label>
+                    <textarea
+                      value={editCenemRequirements}
+                      onChange={(e) => setEditCenemRequirements(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-red-600 h-20"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 bg-[#940028] hover:bg-[#7d0022] text-white text-xs font-semibold py-2.5 rounded transition cursor-pointer font-mono"
+                    >
+                      Guardar Modificaciones
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingCenem(false)}
+                      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs py-2.5 px-4 rounded transition cursor-pointer font-mono"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: NOTIFICACIÓN DE DIRECTIVAS PRÓXIMAS (< 15 MIN) */}
       {showModal && upcomingTasks.length > 0 && (

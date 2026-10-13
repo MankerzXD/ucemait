@@ -80,8 +80,26 @@ ON CONFLICT (key) DO NOTHING;
 
 ALTER TABLE public.tv_settings REPLICA IDENTITY FULL;
 
+-- 7. Create table for Laboratorio CeNem
+CREATE TABLE IF NOT EXISTS public.cenem_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    event_date DATE NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    requirements TEXT,
+    applicant TEXT,
+    status TEXT CHECK (status IN ('active', 'cancelled')) DEFAULT 'active' NOT NULL,
+    created_by_email TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.cenem_events REPLICA IDENTITY FULL;
+
 -- Add Supabase Publication for Realtime replication
 BEGIN;
   DROP PUBLICATION IF EXISTS supabase_realtime;
-  CREATE PUBLICATION supabase_realtime FOR TABLE public.directives, public.observations, public.fixed_events, public.tv_settings;
+  CREATE PUBLICATION supabase_realtime FOR TABLE public.directives, public.observations, public.fixed_events, public.tv_settings, public.cenem_events;
 COMMIT;
+

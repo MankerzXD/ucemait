@@ -519,6 +519,9 @@ export default function TvDashboardPage() {
           }
           fetchInitialData();
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'cenem_events' }, () => {
+          fetchInitialData();
+        })
         .subscribe((status) => {
           console.log('TV Realtime mirror status:', status);
         });
@@ -553,7 +556,32 @@ export default function TvDashboardPage() {
 
       const { data: evts, error: errEvts } = await supabase.from('fixed_events').select('*').order('created_at', { ascending: false });
       if (errEvts) throw errEvts;
-      if (evts) setEvents(evts);
+      
+      let allEvts = evts || [];
+      try {
+        const { data: cenems } = await supabase.from('cenem_events').select('*');
+        if (cenems && cenems.length > 0) {
+          const dayMap = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+          const mappedCenem = cenems.map(c => {
+            let dayName = 'Lunes';
+            if (c.event_date) {
+              const [y, m, d] = c.event_date.split('-').map(Number);
+              dayName = dayMap[new Date(y, m - 1, d).getDay()] || 'Lunes';
+            }
+            return {
+              id: `cenem_${c.id}`,
+              day_of_week: dayName,
+              title: c.status === 'cancelled' ? `[CeNem] ${c.title} (CANCELADO)` : `[CeNem] ${c.title}`,
+              time_range: `${c.start_time} - ${c.end_time || ''}`,
+              description: c.requirements || (c.applicant ? `Solicitante: ${c.applicant}` : ''),
+              created_by_email: c.created_by_email
+            };
+          });
+          allEvts = [...allEvts, ...mappedCenem];
+        }
+      } catch {}
+
+      setEvents(allEvts);
     } catch (err) {
       console.error('Error fetching TV data:', err);
       // Fallback
@@ -566,7 +594,29 @@ export default function TvDashboardPage() {
     if (localTheme) setTvTheme(localTheme);
     setDirectives(JSON.parse(localStorage.getItem('demo_directives') || '[]'));
     setObservations(JSON.parse(localStorage.getItem('demo_observations') || '[]'));
-    setEvents(JSON.parse(localStorage.getItem('demo_events') || '[]'));
+    
+    let evts = JSON.parse(localStorage.getItem('demo_events') || '[]');
+    const localCenem = JSON.parse(localStorage.getItem('demo_cenem_events') || '[]');
+    if (localCenem.length > 0) {
+      const dayMap = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+      const mapped = localCenem.map(c => {
+        let dayName = 'Lunes';
+        if (c.event_date) {
+          const [y, m, d] = c.event_date.split('-').map(Number);
+          dayName = dayMap[new Date(y, m - 1, d).getDay()] || 'Lunes';
+        }
+        return {
+          id: `cenem_${c.id}`,
+          day_of_week: dayName,
+          title: c.status === 'cancelled' ? `[CeNem] ${c.title} (CANCELADO)` : `[CeNem] ${c.title}`,
+          time_range: `${c.start_time} - ${c.end_time || ''}`,
+          description: c.requirements || (c.applicant ? `Solicitante: ${c.applicant}` : ''),
+          created_by_email: c.created_by_email
+        };
+      });
+      evts = [...evts, ...mapped];
+    }
+    setEvents(evts);
   };
 
   // 4. Listen to storage changes for cross-tab sync in Demo Mode
