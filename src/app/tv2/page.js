@@ -234,25 +234,27 @@ export default function Tv2DashboardPage() {
   const [tvEditDate, setTvEditDate] = useState('');
   const [tvEditStartTime, setTvEditStartTime] = useState('');
   const [tvEditEndTime, setTvEditEndTime] = useState('');
-  const [tvEditTitle, setTvEditTitle] = useState('');
-  const [tvEditRequirements, setTvEditRequirements] = useState('');
-  const [tvEditApplicant, setTvEditApplicant] = useState('');
+
+  // Live Day Tracker (Checks every 5 seconds; updates immediately on midnight rollover)
+  const getTodayDateKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const [currentDateKey, setCurrentDateKey] = useState(getTodayDateKey);
 
   // Combined & Merged Calendar Data (Outlook + CeNem Events)
   const displayCalendarData = useMemo(() => {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    const currentDay = now.getDate();
-    const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+    const [currentYear, currentMonth, currentDay] = currentDateKey.split('-').map(Number);
+    const todayStr = currentDateKey;
     
+    const now = new Date(currentYear, currentMonth - 1, currentDay);
     const tom = new Date(now.getTime() + 86400000);
     const tomorrowStr = `${tom.getFullYear()}-${String(tom.getMonth() + 1).padStart(2, '0')}-${String(tom.getDate()).padStart(2, '0')}`;
 
     const formattedCenem = (cenemEvents || []).map(c => {
       const isCancelled = c.status === 'cancelled';
-      const equipmentTags = ['CeNem'];
-      if (c.applicant) equipmentTags.push(`Docente: ${c.applicant}`);
+      const equipmentTags = ['CeNem', 'Sede 637'];
       if (isCancelled) equipmentTags.unshift('CANCELADO');
 
       return {
@@ -260,15 +262,15 @@ export default function Tv2DashboardPage() {
         rawId: c.id,
         isCeNem: true,
         status: c.status || 'active',
-        title: c.title.toLowerCase().includes('cenem') ? c.title : `Laboratorio CeNem - ${c.title}`,
-        rawTitle: c.title,
-        description: c.requirements || (c.applicant ? `Solicitado por: ${c.applicant}` : ''),
-        location: 'CeNem',
+        title: 'Laboratorio CeNem',
+        rawTitle: 'Laboratorio CeNem',
+        description: 'Uso del Laboratorio CeNem en Sede 637',
+        location: 'Sede 637',
         dateStr: c.event_date,
         timeStr: c.start_time,
         endTimeStr: c.end_time || '',
-        applicant: c.applicant || '',
-        requirements: c.requirements || '',
+        applicant: 'Sede 637',
+        requirements: 'Sede 637',
         created_by_email: c.created_by_email || '',
         aiAnalysis: {
           equipment_tags: equipmentTags,
@@ -320,7 +322,7 @@ export default function Tv2DashboardPage() {
       monthEvents: mergedMonthEvents,
       daysWithEvents: mergedDaysWithEvents
     };
-  }, [calendarData, cenemEvents]);
+  }, [calendarData, cenemEvents, currentDateKey]);
 
   // Combined Weekly Calendar Events (Fixed events + CeNem with day_of_week)
   const combinedWeeklyEvents = useMemo(() => {
@@ -340,12 +342,13 @@ export default function Tv2DashboardPage() {
         isCeNem: true,
         status: c.status || 'active',
         day_of_week: dayName,
-        title: c.title.toLowerCase().includes('cenem') ? c.title : `[CeNem] ${c.title}`,
-        rawTitle: c.title,
+        title: '[CeNem] Sede 637',
+        rawTitle: 'Laboratorio CeNem',
+        location: 'Sede 637',
         time_range: `${c.start_time} - ${c.end_time || ''}`,
-        description: c.requirements || (c.applicant ? `Solicitante: ${c.applicant}` : ''),
-        applicant: c.applicant,
-        requirements: c.requirements,
+        description: 'Uso del Laboratorio CeNem en Sede 637',
+        applicant: 'Sede 637',
+        requirements: 'Sede 637',
         event_date: c.event_date,
         start_time: c.start_time,
         end_time: c.end_time
@@ -461,6 +464,34 @@ export default function Tv2DashboardPage() {
       isMounted = false;
       clearInterval(interval);
     };
+  }, []);
+
+  // Midnight day change detector: automatically switches day and triggers fresh fetches
+  useEffect(() => {
+    const checkMidnight = () => {
+      const nowKey = getTodayDateKey();
+      if (nowKey !== currentDateKey) {
+        console.log('🔄 Cambio de día detectado en TV2:', currentDateKey, '->', nowKey);
+        setCurrentDateKey(nowKey);
+        fetchOutlookCalendar();
+        fetchInitialData();
+      }
+    };
+
+    const interval = setInterval(checkMidnight, 5000);
+    return () => clearInterval(interval);
+  }, [currentDateKey]);
+
+  // 24/7 Digital Signage Health: Scheduled soft reload at 03:30 AM to prevent browser memory leaks
+  useEffect(() => {
+    const checkScheduledReload = () => {
+      const now = new Date();
+      if (now.getHours() === 3 && now.getMinutes() === 30 && now.getSeconds() < 10) {
+        window.location.reload();
+      }
+    };
+    const reloadTimer = setInterval(checkScheduledReload, 8000);
+    return () => clearInterval(reloadTimer);
   }, []);
 
   // Check for upcoming directives & calendar events (< 15 min away)
@@ -643,26 +674,14 @@ export default function Tv2DashboardPage() {
     const defaultCenem = [
       {
         id: 'cenem_1',
-        title: 'Taller Finanzas Cuantitativas CeNem',
+        title: 'Laboratorio CeNem',
         event_date: todayStr,
         start_time: '16:00',
         end_time: '21:00',
-        requirements: '25 PCs configuradas, proyector HDMI, software Python y R.',
-        applicant: 'Prof. Emilio Ocampo',
+        requirements: 'Sede 637',
+        applicant: 'Sede 637',
         status: 'active',
         created_by_email: 'sanchezmanuel397@gmail.com',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'cenem_2',
-        title: 'Laboratorio CeNem - Modelado de Datos',
-        event_date: tomorrowStr,
-        start_time: '18:00',
-        end_time: '21:00',
-        requirements: 'Verificar Jupyter Notebooks, conectividad a bases de datos y audio.',
-        applicant: 'Dra. María González',
-        status: 'active',
-        created_by_email: 'ajgarcia@ucema.edu.ar',
         created_at: new Date().toISOString()
       }
     ];
@@ -695,23 +714,23 @@ export default function Tv2DashboardPage() {
     setTvEditDate(evt.dateStr || evt.event_date || '');
     setTvEditStartTime(evt.timeStr || evt.start_time || '');
     setTvEditEndTime(evt.endTimeStr || evt.end_time || '');
-    setTvEditTitle(evt.rawTitle || evt.title || '');
-    setTvEditRequirements(evt.requirements || evt.description || '');
-    setTvEditApplicant(evt.applicant || '');
+    setTvEditTitle('Laboratorio CeNem');
+    setTvEditRequirements('Sede 637');
+    setTvEditApplicant('Sede 637');
   };
 
   const handleSaveEditCenemTv = async (e) => {
     e.preventDefault();
-    if (!selectedTicketModal || !tvEditTitle.trim()) return;
+    if (!selectedTicketModal || !tvEditDate || !tvEditStartTime || !tvEditEndTime) return;
 
     const rawId = selectedTicketModal.rawId || selectedTicketModal.id.replace('cenem_', '');
     const updatedData = {
-      title: tvEditTitle.trim(),
+      title: 'Laboratorio CeNem',
       event_date: tvEditDate,
       start_time: tvEditStartTime,
       end_time: tvEditEndTime,
-      requirements: tvEditRequirements.trim(),
-      applicant: tvEditApplicant.trim(),
+      requirements: 'Sede 637',
+      applicant: 'Sede 637',
       updated_at: new Date().toISOString()
     };
 
@@ -731,14 +750,15 @@ export default function Tv2DashboardPage() {
     setEditingCenemInTv(false);
     setSelectedTicketModal(prev => prev ? {
       ...prev,
-      title: tvEditTitle.trim().toLowerCase().includes('cenem') ? tvEditTitle.trim() : `Laboratorio CeNem - ${tvEditTitle.trim()}`,
-      rawTitle: tvEditTitle.trim(),
+      title: 'Laboratorio CeNem',
+      rawTitle: 'Laboratorio CeNem',
       timeStr: tvEditStartTime,
       endTimeStr: tvEditEndTime,
       dateStr: tvEditDate,
-      description: tvEditRequirements.trim(),
-      requirements: tvEditRequirements.trim(),
-      applicant: tvEditApplicant.trim()
+      location: 'Sede 637',
+      description: 'Uso del Laboratorio CeNem en Sede 637',
+      requirements: 'Sede 637',
+      applicant: 'Sede 637'
     } : null);
   };
 
@@ -916,21 +936,24 @@ export default function Tv2DashboardPage() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Group directives dynamically by date
-  const getLocalDateString = (offsetDays = 0) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offsetDays);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+  // Group directives dynamically by date using currentDateKey
+  const todayStr = currentDateKey;
+  const tomorrowStr = useMemo(() => {
+    const [y, m, d] = currentDateKey.split('-').map(Number);
+    const tom = new Date(y, m - 1, d + 1);
+    const tomY = tom.getFullYear();
+    const tomM = String(tom.getMonth() + 1).padStart(2, '0');
+    const tomD = String(tom.getDate()).padStart(2, '0');
+    return `${tomY}-${tomM}-${tomD}`;
+  }, [currentDateKey]);
 
-  const todayStr = getLocalDateString(0);
-  const tomorrowStr = getLocalDateString(1);
+  const directivesHoy = useMemo(() => {
+    return directives.filter(d => d.directive_date === todayStr);
+  }, [directives, todayStr]);
 
-  const directivesHoy = directives.filter(d => d.directive_date === todayStr);
-  const directivesManana = directives.filter(d => d.directive_date === tomorrowStr);
+  const directivesManana = useMemo(() => {
+    return directives.filter(d => d.directive_date === tomorrowStr);
+  }, [directives, tomorrowStr]);
 
   const getActiveDirectivesForDay = (directivesList) => {
     if (!directivesList || directivesList.length === 0) return [];
@@ -981,7 +1004,7 @@ export default function Tv2DashboardPage() {
       });
     }
 
-    const currentDayNumber = new Date().getDate();
+    const currentDayNumber = Number(currentDateKey.split('-')[2]);
     for (let d = 1; d <= totalDays; d++) {
       const isToday = d === currentDayNumber;
       const dayEvents = displayCalendarData.daysWithEvents[d] || [];
@@ -1004,23 +1027,23 @@ export default function Tv2DashboardPage() {
     }
 
     return cells;
-  }, [displayCalendarData.currentYear, displayCalendarData.currentMonth, displayCalendarData.daysWithEvents]);
+  }, [displayCalendarData.currentYear, displayCalendarData.currentMonth, displayCalendarData.daysWithEvents, currentDateKey]);
 
-  // Formatted date string for HOY & MAÑANA headers
+  // Formatted date string for HOY & MAÑANA headers (reacts live to midnight day change)
   const todayHeaderDate = useMemo(() => {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
+    const [y, m, d] = currentDateKey.split('-').map(Number);
+    const day = String(d).padStart(2, '0');
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    return `${day} ${months[now.getMonth()]}`;
-  }, []);
+    return `${day} ${months[m - 1]}`;
+  }, [currentDateKey]);
 
   const tomorrowHeaderDate = useMemo(() => {
-    const tom = new Date();
-    tom.setDate(tom.getDate() + 1);
+    const [y, m, d] = currentDateKey.split('-').map(Number);
+    const tom = new Date(y, m - 1, d + 1);
     const day = String(tom.getDate()).padStart(2, '0');
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     return `${day} ${months[tom.getMonth()]}`;
-  }, []);
+  }, [currentDateKey]);
 
   // Card component renderer for Outlook events (reused in desktop and mobile)
   const renderEventCard = (evt) => {
@@ -1666,6 +1689,7 @@ export default function Tv2DashboardPage() {
         isFourDayMode={isFourDayMode}
         onToggleFourDayMode={handleToggleFourDayMode}
         onEventClick={(evt) => setSelectedTicketModal(evt)}
+        currentDateKey={currentDateKey}
       />
     </section>
   );
@@ -1785,7 +1809,7 @@ export default function Tv2DashboardPage() {
               <div>
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#940028] text-white">
-                    HELPDESK OUTLOOK
+                    {selectedTicketModal.isCeNem ? 'LABORATORIO CENEM' : 'HELPDESK OUTLOOK'}
                   </span>
                   {selectedTicketModal.location && (
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded flex items-center gap-1 ${
@@ -1932,34 +1956,11 @@ export default function Tv2DashboardPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Título / Actividad</label>
-                  <input
-                    type="text"
-                    value={tvEditTitle}
-                    onChange={(e) => setTvEditTitle(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Solicitante / Docente</label>
-                  <input
-                    type="text"
-                    value={tvEditApplicant}
-                    onChange={(e) => setTvEditApplicant(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-xs rounded text-white font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] uppercase font-mono text-zinc-400 mb-1">Requerimientos Técnicos</label>
-                  <textarea
-                    value={tvEditRequirements}
-                    onChange={(e) => setTvEditRequirements(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 px-3 py-2 text-xs rounded text-white h-20"
-                  />
+                <div className="bg-zinc-950 border border-zinc-800 p-2.5 rounded flex items-center justify-between text-xs font-mono">
+                  <span className="text-zinc-400 uppercase text-[10px]">Ubicación asignada:</span>
+                  <span className="px-2 py-0.5 rounded bg-[#940028]/20 border border-[#940028]/40 text-red-200 font-bold flex items-center gap-1">
+                    <MapPin size={11} className="text-[#940028]" /> Sede 637
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">

@@ -9,6 +9,24 @@ let cachedData = null;
 let cacheTime = 0;
 const CACHE_TTL_MS = 45 * 1000; // 45 seconds
 
+function getArgentinaDateStr(offsetDays = 0) {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(d); // Returns YYYY-MM-DD
+  } catch {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+}
+
 function parseIcsDate(rawDateStr) {
   if (!rawDateStr) return null;
   // Format can be: 20260917T153000, 20260917T153000Z, or 20260917
@@ -103,10 +121,10 @@ function parseICS(icsText) {
 }
 
 export async function GET() {
-  const now = new Date();
+  const currentTodayStr = getArgentinaDateStr(0);
   
-  // Return cached if still valid
-  if (cachedData && (Date.now() - cacheTime < CACHE_TTL_MS)) {
+  // Return cached if still valid AND matches current day
+  if (cachedData && (Date.now() - cacheTime < CACHE_TTL_MS) && cachedData.todayStr === currentTodayStr) {
     return NextResponse.json(cachedData);
   }
 
@@ -138,8 +156,7 @@ export async function GET() {
           if (c.event_date) {
             const [y, m, d] = c.event_date.split('-').map(Number);
             const isCancelled = c.status === 'cancelled';
-            const equipmentTags = ['CeNem'];
-            if (c.applicant) equipmentTags.push(`Docente: ${c.applicant}`);
+            const equipmentTags = ['CeNem', 'Sede 637'];
             if (isCancelled) equipmentTags.unshift('CANCELADO');
 
             allEvents.push({
@@ -147,10 +164,10 @@ export async function GET() {
               rawId: c.id,
               isCeNem: true,
               status: c.status || 'active',
-              title: c.title.toLowerCase().includes('cenem') ? c.title : `Laboratorio CeNem - ${c.title}`,
-              rawTitle: c.title,
-              description: c.requirements || (c.applicant ? `Solicitado por: ${c.applicant}` : ''),
-              location: 'CeNem',
+              title: 'Laboratorio CeNem',
+              rawTitle: 'Laboratorio CeNem',
+              description: 'Uso del Laboratorio CeNem en Sede 637',
+              location: 'Sede 637',
               dateStr: c.event_date,
               timeStr: c.start_time,
               endTimeStr: c.end_time || '',
@@ -172,16 +189,8 @@ export async function GET() {
     } catch {}
 
     // Calculate Today & Tomorrow in Argentina local date
-    const getLocalFormattedDate = (offsetDays = 0) => {
-      const d = new Date(now.getTime() + offsetDays * 86400000);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
-
-    const todayStr = getLocalFormattedDate(0);
-    const tomorrowStr = getLocalFormattedDate(1);
+    const todayStr = getArgentinaDateStr(0);
+    const tomorrowStr = getArgentinaDateStr(1);
 
     const todayEvents = allEvents.filter(e => e.dateStr === todayStr);
     const tomorrowEvents = allEvents.filter(e => e.dateStr === tomorrowStr);

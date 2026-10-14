@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Clock, ShieldAlert, Cpu, Activity, Database, Flame, Wifi, Layers, CalendarRange, Bell, X } from 'lucide-react';
 
@@ -326,6 +326,39 @@ export default function TvDashboardPage() {
   const [observations, setObservations] = useState([]);
   const [events, setEvents] = useState([]);
 
+  // Live Day Tracker (Checks every 5 seconds; updates immediately on midnight rollover)
+  const getTodayDateKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const [currentDateKey, setCurrentDateKey] = useState(getTodayDateKey);
+
+  useEffect(() => {
+    const checkMidnight = () => {
+      const nowKey = getTodayDateKey();
+      if (nowKey !== currentDateKey) {
+        console.log('🔄 Cambio de día detectado en TV:', currentDateKey, '->', nowKey);
+        setCurrentDateKey(nowKey);
+        fetchInitialData();
+      }
+    };
+    const interval = setInterval(checkMidnight, 5000);
+    return () => clearInterval(interval);
+  }, [currentDateKey]);
+
+  // Scheduled maintenance reload at 03:30 AM
+  useEffect(() => {
+    const checkReload = () => {
+      const now = new Date();
+      if (now.getHours() === 3 && now.getMinutes() === 30 && now.getSeconds() < 10) {
+        window.location.reload();
+      }
+    };
+    const timer = setInterval(checkReload, 8000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Alert Modal states for upcoming tasks (<15 min)
   const [upcomingAlertTasks, setUpcomingAlertTasks] = useState([]);
   const [showAlertModal, setShowAlertModal] = useState(false);
@@ -571,9 +604,9 @@ export default function TvDashboardPage() {
             return {
               id: `cenem_${c.id}`,
               day_of_week: dayName,
-              title: c.status === 'cancelled' ? `[CeNem] ${c.title} (CANCELADO)` : `[CeNem] ${c.title}`,
+              title: c.status === 'cancelled' ? `[CeNem] Sede 637 (CANCELADO)` : `[CeNem] Sede 637`,
               time_range: `${c.start_time} - ${c.end_time || ''}`,
-              description: c.requirements || (c.applicant ? `Solicitante: ${c.applicant}` : ''),
+              description: 'Laboratorio CeNem - Sede 637',
               created_by_email: c.created_by_email
             };
           });
@@ -608,9 +641,9 @@ export default function TvDashboardPage() {
         return {
           id: `cenem_${c.id}`,
           day_of_week: dayName,
-          title: c.status === 'cancelled' ? `[CeNem] ${c.title} (CANCELADO)` : `[CeNem] ${c.title}`,
+          title: c.status === 'cancelled' ? `[CeNem] Sede 637 (CANCELADO)` : `[CeNem] Sede 637`,
           time_range: `${c.start_time} - ${c.end_time || ''}`,
-          description: c.requirements || (c.applicant ? `Solicitante: ${c.applicant}` : ''),
+          description: 'Laboratorio CeNem - Sede 637',
           created_by_email: c.created_by_email
         };
       });
@@ -633,21 +666,24 @@ export default function TvDashboardPage() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Group directives dynamically by date
-  const getLocalDateString = (offsetDays = 0) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offsetDays);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+  // Group directives dynamically by date using currentDateKey
+  const todayStr = currentDateKey;
+  const tomorrowStr = useMemo(() => {
+    const [y, m, d] = currentDateKey.split('-').map(Number);
+    const tom = new Date(y, m - 1, d + 1);
+    const tomY = tom.getFullYear();
+    const tomM = String(tom.getMonth() + 1).padStart(2, '0');
+    const tomD = String(tom.getDate()).padStart(2, '0');
+    return `${tomY}-${tomM}-${tomD}`;
+  }, [currentDateKey]);
 
-  const todayStr = getLocalDateString(0);
-  const tomorrowStr = getLocalDateString(1);
+  const directivesHoy = useMemo(() => {
+    return directives.filter(d => d.directive_date === todayStr);
+  }, [directives, todayStr]);
 
-  const directivesHoy = directives.filter(d => d.directive_date === todayStr);
-  const directivesManana = directives.filter(d => d.directive_date === tomorrowStr);
+  const directivesManana = useMemo(() => {
+    return directives.filter(d => d.directive_date === tomorrowStr);
+  }, [directives, tomorrowStr]);
 
   // Helper to get active directives with actual content (only show if has information)
   const getActiveDirectivesForDay = (directivesList) => {

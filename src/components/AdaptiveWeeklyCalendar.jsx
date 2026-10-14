@@ -142,18 +142,33 @@ export default function AdaptiveWeeklyCalendar({
   setBottomWidthPct,
   isFourDayOverride = null,
   setIsFourDayOverride,
-  onEventClick = null
+  onEventClick = null,
+  currentDateKey = null
 }) {
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(1200);
   const [containerHeight, setContainerHeight] = useState(260);
+
+  // Track JS Day reactively (checks every 5 seconds to catch midnight rollover)
+  const [currentJsDay, setCurrentJsDay] = useState(() => new Date().getDay());
+
+  useEffect(() => {
+    const checkDay = () => {
+      const d = new Date().getDay();
+      if (d !== currentJsDay) {
+        setCurrentJsDay(d);
+      }
+    };
+    const interval = setInterval(checkDay, 5000);
+    return () => clearInterval(interval);
+  }, [currentJsDay]);
 
   // Determine current day of week (Lunes - Viernes). If weekend, default to Lunes.
   const todayDayName = useMemo(() => {
     const jsDay = new Date().getDay(); // 0: Dom, 1: Lun, ..., 6: Sab
     const found = WEEK_DAYS.find(d => d.jsDay === jsDay);
     return found ? found.name : 'Lunes';
-  }, []);
+  }, [currentDateKey, currentJsDay]);
 
   // Track container dimensions with ResizeObserver
   useEffect(() => {

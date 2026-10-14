@@ -147,9 +147,6 @@ export default function ManagementPage() {
   });
   const [cenemStartTime, setCenemStartTime] = useState('16:00');
   const [cenemEndTime, setCenemEndTime] = useState('21:00');
-  const [cenemTitle, setCenemTitle] = useState('');
-  const [cenemRequirements, setCenemRequirements] = useState('');
-  const [cenemApplicant, setCenemApplicant] = useState('');
 
   // CeNem database list
   const [cenemList, setCenemList] = useState([]);
@@ -160,9 +157,6 @@ export default function ManagementPage() {
   const [editCenemDate, setEditCenemDate] = useState('');
   const [editCenemStartTime, setEditCenemStartTime] = useState('');
   const [editCenemEndTime, setEditCenemEndTime] = useState('');
-  const [editCenemTitle, setEditCenemTitle] = useState('');
-  const [editCenemRequirements, setEditCenemRequirements] = useState('');
-  const [editCenemApplicant, setEditCenemApplicant] = useState('');
 
   // Alert Modal states for upcoming tasks (<15 min)
   const [upcomingTasks, setUpcomingTasks] = useState([]);
@@ -532,26 +526,14 @@ export default function ManagementPage() {
     const defaultCenem = [
       {
         id: 'cenem_1',
-        title: 'Taller Finanzas Cuantitativas CeNem',
+        title: 'Laboratorio CeNem',
         event_date: todayStr,
         start_time: '16:00',
         end_time: '21:00',
-        requirements: '25 PCs configuradas, proyector HDMI, software Python y R.',
-        applicant: 'Prof. Emilio Ocampo',
+        requirements: 'Sede 637',
+        applicant: 'Sede 637',
         status: 'active',
         created_by_email: 'sanchezmanuel397@gmail.com',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'cenem_2',
-        title: 'Laboratorio CeNem - Modelado de Datos',
-        event_date: tomorrowStr,
-        start_time: '18:00',
-        end_time: '21:00',
-        requirements: 'Verificar Jupyter Notebooks, conectividad a bases de datos y audio.',
-        applicant: 'Dra. María González',
-        status: 'active',
-        created_by_email: 'ajgarcia@ucema.edu.ar',
         created_at: new Date().toISOString()
       }
     ];
@@ -722,15 +704,15 @@ export default function ManagementPage() {
 
   const addCenemEvent = async (e) => {
     e.preventDefault();
-    if (!cenemTitle.trim()) return;
+    if (!cenemDate || !cenemStartTime || !cenemEndTime) return;
 
     const newItem = {
-      title: cenemTitle.trim(),
+      title: 'Laboratorio CeNem',
       event_date: cenemDate,
       start_time: cenemStartTime || '16:00',
       end_time: cenemEndTime || '21:00',
-      requirements: cenemRequirements.trim(),
-      applicant: cenemApplicant.trim(),
+      requirements: 'Sede 637',
+      applicant: 'Sede 637',
       status: 'active',
       created_by_email: userEmail || 'anonymous@ucema.edu.ar',
       created_at: new Date().toISOString()
@@ -748,10 +730,6 @@ export default function ManagementPage() {
       setCenemList(updated);
       broadcastCenemUpdate(updated);
     }
-
-    setCenemTitle('');
-    setCenemRequirements('');
-    setCenemApplicant('');
   };
 
   const openManageCenem = (evt) => {
@@ -760,22 +738,22 @@ export default function ManagementPage() {
     setEditCenemDate(evt.event_date);
     setEditCenemStartTime(evt.start_time);
     setEditCenemEndTime(evt.end_time || '');
-    setEditCenemTitle(evt.title);
-    setEditCenemRequirements(evt.requirements || '');
-    setEditCenemApplicant(evt.applicant || '');
+    setEditCenemTitle('Laboratorio CeNem');
+    setEditCenemRequirements('Sede 637');
+    setEditCenemApplicant('Sede 637');
   };
 
   const saveEditCenem = async (e) => {
     e.preventDefault();
-    if (!selectedCenem || !editCenemTitle.trim()) return;
+    if (!selectedCenem || !editCenemDate || !editCenemStartTime || !editCenemEndTime) return;
 
     const updatedData = {
-      title: editCenemTitle.trim(),
+      title: 'Laboratorio CeNem',
       event_date: editCenemDate,
       start_time: editCenemStartTime,
       end_time: editCenemEndTime,
-      requirements: editCenemRequirements.trim(),
-      applicant: editCenemApplicant.trim(),
+      requirements: 'Sede 637',
+      applicant: 'Sede 637',
       updated_at: new Date().toISOString()
     };
 
@@ -1059,57 +1037,25 @@ export default function ManagementPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
-                Título / Actividad / Materia *
-              </label>
-              <input
-                type="text"
-                value={cenemTitle}
-                onChange={(e) => setCenemTitle(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                placeholder="Ej: Clase Finanzas Cuantitativas"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
-                Solicitante / Docente (Opcional)
-              </label>
-              <input
-                type="text"
-                value={cenemApplicant}
-                onChange={(e) => setCenemApplicant(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                placeholder="Ej: Prof. Gabriel Martínez"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
-                Requerimientos técnicos / Notas
-              </label>
-              <textarea
-                value={cenemRequirements}
-                onChange={(e) => setCenemRequirements(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-red-600 h-16"
-                placeholder="Ej: 25 PCs disponibles, proyector HDMI, software R y Python."
-              />
+            <div className="bg-zinc-950 border border-zinc-800/80 p-2.5 rounded flex items-center justify-between text-xs font-mono">
+              <span className="text-zinc-400 uppercase text-[10px]">Ubicación asignada:</span>
+              <span className="px-2 py-0.5 rounded bg-[#940028]/20 border border-[#940028]/40 text-red-200 font-bold flex items-center gap-1">
+                <MapPin size={11} className="text-[#940028]" /> Sede 637
+              </span>
             </div>
 
             <button
               type="submit"
               className="w-full bg-[#940028] hover:bg-[#7d0022] text-white text-xs font-semibold py-2.5 rounded transition cursor-pointer flex items-center justify-center gap-2 uppercase font-mono shadow-md shadow-[#940028]/25 active:scale-[0.99]"
             >
-              <PlusCircle size={14} /> Registrar Laboratorio CeNem
+              <PlusCircle size={14} /> Registrar CeNem (Sede 637)
             </button>
           </form>
 
           {/* List display */}
           <div className="mt-3 flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase text-zinc-400 font-mono">Listado CeNem</h3>
+              <h3 className="text-xs font-bold uppercase text-zinc-400 font-mono">Listado CeNem (Sede 637)</h3>
               <span className="text-[9px] text-zinc-500 font-mono">Toca para gestionar</span>
             </div>
 
@@ -1172,24 +1118,18 @@ export default function ManagementPage() {
                       <h4 className={`font-bold text-zinc-200 group-hover:text-red-300 transition-colors ${
                         isCancelled ? 'line-through text-zinc-500' : ''
                       }`}>
-                        {c.title}
+                        Laboratorio CeNem
                       </h4>
 
-                      {c.applicant && (
-                        <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                          Solicitó: <span className="text-zinc-300">{c.applicant}</span>
-                        </p>
-                      )}
-
-                      {c.requirements && (
-                        <p className="text-zinc-400 text-[11px] line-clamp-2 mt-1 leading-snug">
-                          {c.requirements}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono mt-1">
+                        <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center gap-1">
+                          <MapPin size={10} className="text-[#940028]" /> Sede 637
+                        </span>
+                      </div>
 
                       <div className="mt-2 text-[9px] text-[#e03158] font-mono flex items-center justify-between border-t border-zinc-900 pt-1">
                         <span>Click para modificar o cancelar</span>
-                        <span className="opacity-75">CeNem</span>
+                        <span className="opacity-75">Sede 637</span>
                       </div>
                     </div>
                   );
@@ -1438,27 +1378,24 @@ export default function ManagementPage() {
               {!isEditingCenem ? (
                 /* VIEW MODE */
                 <div className="space-y-4">
-                  <div className="bg-zinc-950 p-3.5 rounded-lg border border-zinc-850 space-y-2">
-                    <h4 className={`text-sm font-bold ${selectedCenem.status === 'cancelled' ? 'line-through text-zinc-500' : 'text-white'}`}>
-                      {selectedCenem.title}
-                    </h4>
+                  <div className="bg-zinc-950 p-3.5 rounded-lg border border-zinc-850 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <h4 className={`text-sm font-bold ${selectedCenem.status === 'cancelled' ? 'line-through text-zinc-500' : 'text-white'}`}>
+                        Laboratorio CeNem
+                      </h4>
+                      <span className="px-2 py-0.5 rounded bg-[#940028]/20 border border-[#940028]/40 text-red-200 text-xs font-bold font-mono flex items-center gap-1">
+                        <MapPin size={11} className="text-[#940028]" /> Sede 637
+                      </span>
+                    </div>
 
-                    {selectedCenem.applicant && (
-                      <p className="text-xs text-zinc-400">
-                        <strong className="text-zinc-300">Solicitante:</strong> {selectedCenem.applicant}
-                      </p>
-                    )}
-
-                    <div className="text-xs text-zinc-300 pt-1">
-                      <strong className="text-zinc-400 block text-[10px] uppercase font-mono mb-1">Requerimientos y Observaciones:</strong>
-                      <p className="bg-zinc-900/70 p-2.5 rounded border border-zinc-800 text-[11.5px] leading-relaxed whitespace-pre-line">
-                        {selectedCenem.requirements || 'Sin requerimientos específicos.'}
-                      </p>
+                    <div className="text-xs text-zinc-300 font-mono">
+                      <span className="text-zinc-400">Horario reservado:</span>{' '}
+                      <strong className="text-white">{selectedCenem.event_date} · {selectedCenem.start_time} - {selectedCenem.end_time} hs</strong>
                     </div>
 
                     <div className="text-[10px] text-zinc-500 font-mono pt-1 border-t border-zinc-900 flex justify-between">
                       <span>Registró: {selectedCenem.created_by_email}</span>
-                      <span>Ubicación: Laboratorio CeNem</span>
+                      <span>CeNem • Sede 637</span>
                     </div>
                   </div>
 
@@ -1468,7 +1405,7 @@ export default function ManagementPage() {
                       onClick={() => setIsEditingCenem(true)}
                       className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-mono font-bold py-2.5 px-3 rounded flex items-center justify-center gap-1.5 transition cursor-pointer border border-zinc-700"
                     >
-                      <Edit3 size={14} className="text-amber-400" /> Modificar
+                      <Edit3 size={14} className="text-amber-400" /> Modificar Horario
                     </button>
 
                     <button
@@ -1498,7 +1435,7 @@ export default function ManagementPage() {
                 /* EDIT MODE */
                 <form onSubmit={saveEditCenem} className="space-y-3">
                   <div className="bg-amber-950/30 border border-amber-800/50 p-2.5 rounded text-amber-300 text-[11px] font-mono flex items-center gap-2">
-                    <Edit3 size={14} /> Modificando evento de Laboratorio CeNem
+                    <Edit3 size={14} /> Modificando día y horario CeNem
                   </div>
 
                   <div>
@@ -1541,40 +1478,11 @@ export default function ManagementPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
-                      Título / Actividad *
-                    </label>
-                    <input
-                      type="text"
-                      value={editCenemTitle}
-                      onChange={(e) => setEditCenemTitle(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
-                      Solicitante / Docente
-                    </label>
-                    <input
-                      type="text"
-                      value={editCenemApplicant}
-                      onChange={(e) => setEditCenemApplicant(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-1.5 text-xs rounded focus:outline-none focus:border-red-600 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-zinc-400 font-mono mb-1">
-                      Requerimientos técnicos / Notas
-                    </label>
-                    <textarea
-                      value={editCenemRequirements}
-                      onChange={(e) => setEditCenemRequirements(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 px-3 py-2 text-xs rounded focus:outline-none focus:border-red-600 h-20"
-                    />
+                  <div className="bg-zinc-950 border border-zinc-800/80 p-2.5 rounded flex items-center justify-between text-xs font-mono">
+                    <span className="text-zinc-400 uppercase text-[10px]">Ubicación:</span>
+                    <span className="px-2 py-0.5 rounded bg-[#940028]/20 border border-[#940028]/40 text-red-200 font-bold flex items-center gap-1">
+                      <MapPin size={11} className="text-[#940028]" /> Sede 637
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-2 pt-2">
