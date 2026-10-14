@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   Tv, LogOut, Shield, ClipboardList, Eye, PlusCircle, Trash2, Calendar, AlertTriangle, Bell, Clock, X,
-  Layers, Edit3, CheckCircle, Ban, RefreshCw, User, Check
+  Layers, Edit3, CheckCircle, Ban, RefreshCw, User, Check, MapPin
 } from 'lucide-react';
 
 // --- HELPER COMPONENT: AutoScrollBox for long lists and modals ---
