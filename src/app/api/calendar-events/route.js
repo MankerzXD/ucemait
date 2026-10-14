@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rrulestr } from 'rrule';
 import { analyzeTicketWithGemini } from '@/lib/geminiParser';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -65,34 +66,15 @@ function parseICS(icsText) {
   // Unfold lines (RFC 5545: lines starting with space or tab are continuations)
   const unfolded = icsText.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
   const lines = unfolded.split(/\r?\n/);
-  const events = [];
+  const rawEvents = [];
   let cur = null;
 
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
-      cur = {};
+      cur = { exdates: [] };
     } else if (line === 'END:VEVENT') {
       if (cur && cur.summary && cur.rawStart) {
-        const startParsed = parseIcsDate(cur.rawStart);
-        const endParsed = parseIcsDate(cur.rawEnd);
-
-        if (startParsed) {
-          events.push({
-            id: cur.uid || `evt_${Math.random().toString(36).slice(2, 9)}`,
-            title: cur.summary,
-            description: cur.description || '',
-            location: cur.location || '',
-            dateStr: startParsed.dateStr,
-            timeStr: startParsed.timeStr,
-            endTimeStr: endParsed ? endParsed.timeStr : '',
-            year: startParsed.year,
-            month: startParsed.month,
-            day: startParsed.day,
-            hours: startParsed.hours,
-            minutes: startParsed.minutes,
-            isDateOnly: startParsed.isDateOnly
-          });
-        }
+        rawEvents.push(cur);
       }
       cur = null;
     } else if (cur) {
@@ -108,6 +90,142 @@ function parseICS(icsText) {
       else if (propName === 'DTSTART') cur.rawStart = val;
       else if (propName === 'DTEND') cur.rawEnd = val;
       else if (propName === 'UID') cur.uid = val;
+      else if (propName === 'RRULE') cur.rrule = val;
+      else if (propName === 'EXDATE') cur.exdates.push(val);
+      else if (propName === 'RECURRENCE-ID') cur.recurrenceId = val;
+      else if (propName === 'STATUS') cur.status = val;
+    }
+  }
+
+  // Separate individual instance overrides from master recurring events
+  const overridesByUid = new Map();
+  const masters = [];
+
+  for (const ev of rawEvents) {
+    if (ev.recurrenceId) {
+      const p = parseIcsDate(ev.recurrenceId);
+      if (p) {
+        const key = `${ev.uid}_${p.dateStr}`;
+        overridesByUid.set(key, ev);
+      }
+    } else {
+      masters.push(ev);
+    }
+  }
+
+  // Expansion window: 60 days before current month to 120 days into future
+  const now = new Date();
+  const startWindow = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 2, 1));
+  const endWindow = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 4, 1));
+
+  const events = [];
+
+  for (const ev of masters) {
+    const startParsed = parseIcsDate(ev.rawStart);
+    const endParsed = parseIcsDate(ev.rawEnd);
+    if (!startParsed) continue;
+
+    const baseEvt = {
+      id: ev.uid || `evt_${Math.random().toString(36).slice(2, 9)}`,
+      title: ev.summary,
+      description: ev.description || '',
+      location: ev.location || '',
+      timeStr: startParsed.timeStr,
+      endTimeStr: endParsed ? endParsed.timeStr : '',
+      hours: startParsed.hours,
+      minutes: startParsed.minutes,
+      isDateOnly: startParsed.isDateOnly
+    };
+
+    if (ev.rrule) {
+      try {
+        const dtstartUtc = new Date(Date.UTC(
+          startParsed.year,
+          startParsed.month - 1,
+          startParsed.day,
+          startParsed.hours,
+          startParsed.minutes
+        ));
+
+        let ruleStr = ev.rrule.trim();
+        if (!ruleStr.startsWith('RRULE:')) ruleStr = 'RRULE:' + ruleStr;
+
+        const rule = rrulestr(ruleStr, { dtstart: dtstartUtc });
+        const dates = rule.between(startWindow, endWindow, true);
+
+        // Parse exception dates (EXDATE)
+        const exdateSet = new Set();
+        for (const ex of ev.exdates) {
+          const exp = parseIcsDate(ex);
+          if (exp) exdateSet.add(exp.dateStr);
+        }
+
+        for (const occ of dates) {
+          const occY = occ.getUTCFullYear();
+          const occM = occ.getUTCMonth() + 1;
+          const occD = occ.getUTCDate();
+          const dateStr = `${occY}-${String(occM).padStart(2, '0')}-${String(occD).padStart(2, '0')}`;
+
+          // Skip if explicitly excluded in EXDATE
+          if (exdateSet.has(dateStr)) continue;
+
+          // Check if there is an instance override for this date
+          const overrideKey = `${ev.uid}_${dateStr}`;
+          if (overridesByUid.has(overrideKey)) {
+            const ov = overridesByUid.get(overrideKey);
+            if (ov.status === 'CANCELLED') {
+              continue;
+            }
+            const ovStart = parseIcsDate(ov.rawStart) || startParsed;
+            const ovEnd = parseIcsDate(ov.rawEnd) || endParsed;
+            events.push({
+              ...baseEvt,
+              id: `${baseEvt.id}_${dateStr}`,
+              title: ov.summary || baseEvt.title,
+              description: ov.description || baseEvt.description,
+              location: ov.location || baseEvt.location,
+              dateStr,
+              timeStr: ovStart.timeStr,
+              endTimeStr: ovEnd ? ovEnd.timeStr : baseEvt.endTimeStr,
+              year: occY,
+              month: occM,
+              day: occD,
+              hours: ovStart.hours,
+              minutes: ovStart.minutes
+            });
+            continue;
+          }
+
+          // Standard recurrence occurrence
+          events.push({
+            ...baseEvt,
+            id: `${baseEvt.id}_${dateStr}`,
+            dateStr,
+            year: occY,
+            month: occM,
+            day: occD
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse recurrence rule for:', ev.summary, err.message);
+        // Fallback: push base master event
+        events.push({
+          ...baseEvt,
+          dateStr: startParsed.dateStr,
+          year: startParsed.year,
+          month: startParsed.month,
+          day: startParsed.day
+        });
+      }
+    } else {
+      // Non-recurring single event
+      events.push({
+        ...baseEvt,
+        dateStr: startParsed.dateStr,
+        year: startParsed.year,
+        month: startParsed.month,
+        day: startParsed.day
+      });
     }
   }
 
