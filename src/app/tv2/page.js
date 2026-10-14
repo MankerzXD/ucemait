@@ -216,16 +216,23 @@ export default function Tv2DashboardPage() {
   const [events, setEvents] = useState([]);
 
   // Outlook Calendar Data
-  const [calendarData, setCalendarData] = useState({
-    todayEvents: [],
-    tomorrowEvents: [],
-    monthEvents: [],
-    daysWithEvents: {},
-    todayStr: '',
-    tomorrowStr: '',
-    currentMonthName: 'SEPTIEMBRE',
-    currentYear: 2026,
-    currentMonth: 9
+  const [calendarData, setCalendarData] = useState(() => {
+    const d = new Date();
+    const monthNames = [
+      'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+      'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
+    ];
+    return {
+      todayEvents: [],
+      tomorrowEvents: [],
+      monthEvents: [],
+      daysWithEvents: {},
+      todayStr: '',
+      tomorrowStr: '',
+      currentMonthName: monthNames[d.getMonth()] || 'OCTUBRE',
+      currentYear: d.getFullYear(),
+      currentMonth: d.getMonth() + 1
+    };
   });
 
   // Laboratorio CeNem Data & TV Edit States
@@ -443,7 +450,7 @@ export default function Tv2DashboardPage() {
         daysWithEvents: data.daysWithEvents || {},
         todayStr: data.todayStr || '',
         tomorrowStr: data.tomorrowStr || '',
-        currentMonthName: monthNames[monthIndex] || 'SEPTIEMBRE',
+        currentMonthName: monthNames[monthIndex] || monthNames[new Date().getMonth()] || 'OCTUBRE',
         currentYear: data.currentYear || new Date().getFullYear(),
         currentMonth: data.currentMonth || (new Date().getMonth() + 1)
       });

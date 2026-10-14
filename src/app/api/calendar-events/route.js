@@ -195,8 +195,9 @@ export async function GET() {
     const todayEvents = allEvents.filter(e => e.dateStr === todayStr);
     const tomorrowEvents = allEvents.filter(e => e.dateStr === tomorrowStr);
 
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
+    const [todayY, todayM] = todayStr.split('-').map(Number);
+    const currentYear = todayY;
+    const currentMonth = todayM;
     const monthEvents = allEvents.filter(e => e.year === currentYear && e.month === currentMonth);
 
     // Map of day -> events for fast lookup in month view
@@ -211,25 +212,33 @@ export async function GET() {
     // Enrich today & tomorrow events with AI / Smart ticket analysis
     const enrichedTodayEvents = await Promise.all(
       todayEvents.map(async (e) => {
-        const aiAnalysis = await analyzeTicketWithGemini({
-          id: e.id,
-          title: e.title,
-          timeStr: e.timeStr,
-          description: e.description
-        });
-        return { ...e, aiAnalysis };
+        try {
+          const aiAnalysis = await analyzeTicketWithGemini({
+            id: e.id,
+            title: e.title,
+            timeStr: e.timeStr,
+            description: e.description
+          });
+          return { ...e, aiAnalysis };
+        } catch {
+          return e;
+        }
       })
     );
 
     const enrichedTomorrowEvents = await Promise.all(
       tomorrowEvents.map(async (e) => {
-        const aiAnalysis = await analyzeTicketWithGemini({
-          id: e.id,
-          title: e.title,
-          timeStr: e.timeStr,
-          description: e.description
-        });
-        return { ...e, aiAnalysis };
+        try {
+          const aiAnalysis = await analyzeTicketWithGemini({
+            id: e.id,
+            title: e.title,
+            timeStr: e.timeStr,
+            description: e.description
+          });
+          return { ...e, aiAnalysis };
+        } catch {
+          return e;
+        }
       })
     );
 
